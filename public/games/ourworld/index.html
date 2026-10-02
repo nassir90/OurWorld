@@ -826,6 +826,33 @@ function seatPin(b, fy) {
   pn.el.style.transform = `translate(${pn.x.toFixed(1)}px, ${(pn.y - HEAD_UP).toFixed(1)}px)`;
   if (pn.state === 'in') { pn.pivot.position.set(gx(pn.x), gy(pn.y), 0); pn.pivot.quaternion.identity(); pn.pivot.rotation.z = pn.lean * DEG; }
 }
+// The photos are fitted into the free wall left of the earth with explicit margins. (Fixed spots sized by screen height
+// pushed the top pins off screen and overlapped the photos on wide screens, while hundreds of px sat empty beside them.)
+const PIN_RISE = 16;   // how far a pin stands above its card's top edge
+function fitPolaroids(W, H, earthLeft) {
+  const x0 = Math.max(20, W * .025), x1 = earthLeft - Math.max(28, W * .035);
+  const y0 = Math.max(16, H * .03) + PIN_RISE, y1 = H - Math.max(18, H * .035);
+  const Rw = x1 - x0, Rh = y1 - y0;
+  // a card tilted up to 7° takes ~1.14× its width across and ~1.29× its width down; neighbours keep at least 12% of a card apart
+  const FW = 1.14, FH = 1.29, GAP = .12;
+  let best = null;
+  for (const [c, r] of [[3, 2], [2, 3]]) {        // three across in two rows, or two across in three rows: whichever fits bigger cards
+    const sz = Math.min(Rw / (c * FW + (c - 1) * GAP), Rh / (r * FH + (r - 1) * GAP));
+    if (!best || sz > best.sz) best = { c, r, sz };
+  }
+  const { c, r } = best, s = Math.min(best.sz, H * .23, W * .15), fw = s * FW, fh = s * FH;
+  // spread over the free space (but not so far apart that they stop reading as a group), centred in it
+  const gx = Math.min(c > 1 ? (Rw - c * fw) / (c - 1) : 0, s * .7), gy = Math.min(r > 1 ? (Rh - r * fh) / (r - 1) : 0, s * .45);
+  const ox = x0 + (Rw - (c * fw + (c - 1) * gx)) / 2, oy = y0 + (Rh - (r * fh + (r - 1) * gy)) / 2;
+  const tilt = [-7, 5, 4, -5, 3], jit = [[-.03, .02], [.03, -.03], [-.02, .03], [.03, -.01], [-.03, .02]];   // a little scatter, well inside the gap
+  const rows = c === 3 ? [[0, 1, 2], [3, 4]] : [[0, 1], [2, 3], [4]];
+  const spots = [];
+  rows.forEach((row, ri) => row.forEach((idx, ci) => {
+    const shift = (c - row.length) * (fw + gx) / 2;   // a shorter row sits staggered between the cards above it
+    spots[idx] = [ox + shift + ci * (fw + gx) + fw / 2 + jit[idx][0] * s, oy + ri * (fh + gy) + fh / 2 + jit[idx][1] * s, tilt[idx]];
+  }));
+  return { s, spots };
+}
 function wallLayout() {
   sizeWallGL();
   const W = innerWidth, H = innerHeight, wide = W >= 760 || W > H * 1.15;
@@ -834,13 +861,13 @@ function wallLayout() {
     Object.assign(EO, { w: d, h: d * 1.009, size: d, x: wide ? W * .69 : W * .5, y: wide ? H * .44 : H * .25, rz: -3, rx: 0, ry: 0 });
     wEarth.style.width = d + 'px'; drawBody(EO); seatPin(EO, .06);
   }
-  const s = wide ? Math.min(H * .23, W * .15) : Math.min(W * .3, H * .16);
-  const spots = wide ? [[.11, .2, -7], [.29, .15, 5], [.09, .55, 4], [.3, .5, -5], [.19, .83, 3]]
-                     : [[.2, .55, -6], [.52, .53, 5], [.82, .57, -3], [.33, .76, 4], [.68, .78, -5]];
+  let s, spots;
+  if (wide) ({ s, spots } = fitPolaroids(W, H, W * .69 - d / 2));
+  else { s = Math.min(W * .3, H * .16); spots = [[.2, .55, -6], [.52, .53, 5], [.82, .57, -3], [.33, .76, 4], [.68, .78, -5]].map(([x, y, r]) => [x * W, y * H, r]); }
   pols.forEach((p, i) => {
     // instant-film proportions: thin border on three sides, a deep one at the bottom (padding in px; % would follow the wall's width)
     p.w = s; p.h = s * 1.18; p.size = p.h; p.el.style.width = s + 'px'; p.el.style.padding = `${s * .06}px ${s * .06}px ${s * .24}px`;
-    if (p.state === 'pinned') { Object.assign(p, { x: spots[i][0] * W, y: spots[i][1] * H, rz: spots[i][2], rx: 0, ry: 0 }); drawBody(p); seatPin(p, .035); }
+    if (p.state === 'pinned') { Object.assign(p, { x: spots[i][0], y: spots[i][1], rz: spots[i][2], rx: 0, ry: 0 }); drawBody(p); seatPin(p, .035); }
   });
   for (const b of [...pols, EO]) if (b.mesh && b.state === 'pinned' && Math.abs(b.mesh.w0 - b.w) > .5) {   // resized: rebuild at the new size
     const f = b.mesh.fade, ft = b.mesh.fadeT; dropMesh(b); makeCard(b); b.mesh.fade = f; b.mesh.fadeT = ft;
