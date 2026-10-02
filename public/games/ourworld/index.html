@@ -1,0 +1,1564 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="An interactive loop from the Hubble Deep Field to a paper earth on a wall, the room inside you, the globe, the moon and the pale blue dot.">
+<title>You Are Here</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;500;600&family=VT323&display=swap">
+<style>
+/* Full-bleed exhibit: one fixed layer per scene, stacked; a black world except the paper-white room.
+   Loop: galaxy → (pinhole) → inside you → globe → moon → pale blue dot → galaxy */
+:root {
+  --void: #000000;          /* space */
+  --paper: #fdf4ea;         /* inside "you": paper with the faintest coffee stain */
+  --signal: #ff3326;        /* the red square, you, my life */
+  --ink: #141414;           /* the line, the room text */
+  --halftone: #ff7a1a;      /* orange dot field */
+  --dim-ink: rgba(20, 20, 20, 0.45);
+  --f-display: "Archivo Narrow", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --f-vhs: "VT323", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; background: var(--void); color: #eceef5; overflow: hidden; font-family: var(--f-display); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus-visible { outline: 1px dashed var(--signal); outline-offset: 6px; }
+
+.layer { position: fixed; inset: 0; opacity: 0; pointer-events: none; transition: opacity .8s ease; }
+.layer.on { opacity: 1; pointer-events: auto; }
+.layer.instant { transition: none; }
+
+/* galaxy */
+#s-deep { z-index: 6; background: var(--void); cursor: pointer; overflow: hidden; }
+#s-deep .plate { position: absolute; inset: -6%; background: url(img/deepfield.jpg) center / cover no-repeat;
+  /* a soft black vignette that belongs to the field itself: no edge of the image ever shows, at rest or while it grows */
+  -webkit-mask-image: radial-gradient(ellipse farthest-corner at 50% 50%, #000 40%, rgba(0,0,0,.55) 57%, transparent 70%);
+          mask-image: radial-gradient(ellipse farthest-corner at 50% 50%, #000 40%, rgba(0,0,0,.55) 57%, transparent 70%);
+  transform: translate(var(--px, 0px), var(--py, 0px)) scale(var(--ds, 1)); will-change: transform; }
+#s-deep .drift { position: absolute; inset: 0; animation: drift 70s ease-in-out infinite alternate; }
+#s-deep.hold .drift { animation-play-state: paused; }
+@keyframes drift { from { transform: scale(1.02) translate(0, 0); } to { transform: scale(1.12) translate(-1.5%, 1%); } }
+
+/* credit for the reel this is after: quiet, top right of the opening screen only */
+#cite { position: absolute; z-index: 2; top: calc(18px + env(safe-area-inset-top, 0px)); right: 20px; font-family: var(--f-display); font-size: 13px;
+  letter-spacing: .02em; color: rgba(236, 238, 245, .42); text-decoration: none; transition: color .3s; }
+#cite:hover, #cite:focus-visible { color: rgba(236, 238, 245, .85); text-decoration: underline; text-underline-offset: 3px; }
+#blind { position: fixed; inset: 0; z-index: 9; pointer-events: none; opacity: 0; background: #000; }
+/* the pale blue dot on its own, held over the dark while the galaxies open around it */
+#lone { position: fixed; z-index: 8; left: 0; top: 0; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; border-radius: 50%; pointer-events: none; opacity: 0;
+  background: #f4f8ff; box-shadow: 0 0 3px 1px rgba(205, 222, 255, .75), 0 0 10px 2px rgba(160, 190, 255, .25); }
+
+/* pale blue dot, suspended in a pillar of dust */
+#s-pbd { z-index: 5; background: #000; overflow: hidden; cursor: pointer; }
+#pbd { position: absolute; max-width: none; transform-origin: 0 0; will-change: transform, filter; filter: brightness(1.3); }
+
+/* globe and moon share one WebGL canvas */
+#s-globe { z-index: 4; background: var(--void); touch-action: none; cursor: grab; }
+#s-globe.dragging { cursor: grabbing; }
+#s-globe.moon { cursor: pointer; }
+#globe { display: block; width: 100%; height: 100%; }
+
+/* the room inside the square */
+#s-room { z-index: 20; background: var(--paper); color: var(--ink); transition: none; }
+
+/* the wall: a paper earth pinned up, polaroids pinned beside it; whatever is unpinned falls out of frame */
+#s-wall { z-index: 21; background-color: var(--paper); color: var(--ink); transition: none; overflow: hidden; perspective: 1400px; }
+#s-wall.fading { transition: background-color 1.4s ease; background-color: rgba(253, 244, 234, 0); }
+.w-obj { position: absolute; left: 0; top: 0; transform-style: preserve-3d; will-change: transform; opacity: 0; transition: opacity .8s ease; }
+/* the photos and the earth are drawn in 3D from the start; these DOM elements are only their hit targets */
+#wall-earth { filter: drop-shadow(7px 12px 10px rgba(70, 45, 20, .22)) drop-shadow(1px 2px 1px rgba(70, 45, 20, .18)); }
+#wall-earth img { display: block; width: 100%; height: auto; pointer-events: none; user-select: none; }
+.polaroid { background: #fbfaf6; box-sizing: border-box; touch-action: none; user-select: none;
+  box-shadow: 0 1px 1px rgba(60, 40, 20, .18), 4px 9px 14px rgba(60, 40, 20, .2); }
+.polaroid img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; pointer-events: none; filter: saturate(.92) contrast(.97); }
+.polaroid .shade { position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0) 10%, rgba(40, 28, 16, .55) 100%); }
+.polaroid.free { cursor: grab; }
+.polaroid.held { cursor: grabbing; }
+/* pins and anything falling are drawn by a three.js layer; these buttons are just the hit targets over the pin heads */
+#wall-gl { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 35; }
+.pin { position: absolute; left: 0; top: 0; width: 30px; height: 30px; margin: -15px 0 0 -15px; padding: 0; border: 0; border-radius: 50%;
+  background: none; z-index: 40; cursor: pointer; }
+.pin:focus-visible { outline: 1px dashed var(--signal); outline-offset: 2px; }
+.pin.out { pointer-events: none; }
+.w-obj.ghost { opacity: 0 !important; transition: none; }
+#wall-words { position: absolute; right: 5%; bottom: 8%; margin: 0; font-size: clamp(22px, 2.6vw, 40px); font-weight: 500; letter-spacing: -0.01em;
+  opacity: 0; transform-origin: 0 50%; }
+#wall-words.on { animation: crt-on .62s cubic-bezier(.2,.7,.3,1) forwards; }
+#wall-words .crt { animation: none; padding: .25em .6em; margin: -.25em -.6em; }
+#room-c { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+#worries { position: absolute; left: 55%; right: 3%; top: 9%; bottom: 9%; margin: 0; padding: 0; list-style: none;
+  font-size: clamp(26px, 3.4vw, 54px); font-weight: 500; line-height: 1; letter-spacing: -0.01em; pointer-events: none; }
+#worries li { position: absolute; left: var(--x); top: var(--y); white-space: nowrap; opacity: 0; transform-origin: 0 50%; pointer-events: auto; cursor: default; }
+#worries li.me { font-size: 2.4em; font-weight: 600; letter-spacing: -0.02em; }
+#worries li.on { animation: crt-on .62s cubic-bezier(.2,.7,.3,1) forwards; }
+#worries li.off { animation: crt-off .36s ease-in forwards; }
+#worries .crt { animation: none; padding: .25em .6em; margin: -.25em -.6em; }   /* no periodic jitter; padding keeps glitch offsets inside the mask */
+#worries .ch { display: inline-block; transform-origin: 50% 82%; transition: scale .2s cubic-bezier(.3,1.6,.5,1); }
+#worries .ch:hover { scale: 1.6; position: relative; z-index: 1; }
+#worries li.glitch .crt-ink { text-shadow: -3px 0 rgba(255, 0, 70, .7), 3px 0 rgba(0, 170, 255, .7), 0 0 1px rgba(0,0,0,.5); }
+#worries li.glitch .crt-red { text-shadow: -3px 0 rgba(255, 0, 140, .75), 3px 0 rgba(0, 200, 255, .55), 0 0 10px rgba(255, 40, 20, .4); }
+#worries li.glitch .crt { -webkit-mask-image: repeating-linear-gradient(180deg, #000 0 1px, rgba(0,0,0,.3) 1px 2px);
+                                  mask-image: repeating-linear-gradient(180deg, #000 0 1px, rgba(0,0,0,.3) 1px 2px); }
+#worries li.glitch .ch { animation: ch-glitch .34s steps(1) infinite; animation-delay: calc(var(--i) * -61ms); }
+#worries li.glitch .ch:hover { animation-duration: .17s; }
+@keyframes ch-glitch {
+  0% { transform: none; clip-path: none; }
+  18% { transform: translate(3px, 0) skewX(-9deg); clip-path: inset(8% 0 48% 0); }
+  36% { transform: translate(-4px, 1px); clip-path: none; }
+  54% { transform: translate(1px, -1px) skewX(7deg); clip-path: inset(52% 0 4% 0); }
+  72% { transform: translate(-2px, 0); clip-path: inset(0 0 30% 0); }
+  90% { transform: translate(2px, 0); clip-path: none; } }
+#leave { display: none; position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); left: 14px; font-size: 22px; color: var(--dim-ink); width: 40px; height: 40px; }
+@media (hover: none) { #s-room.ready #leave { display: block; } }
+@media (max-width: 760px) and (max-aspect-ratio: 23/20) {
+  #worries { left: 16px; right: 16px; top: 58%; bottom: 4%; font-size: clamp(24px, 7vw, 40px); }
+  #worries li.me { font-size: 2em; }
+}
+
+/* CRT treatment: only on the red marks and the room words, never the whole scene */
+.crt { display: inline-block; position: relative;
+  -webkit-mask-image: repeating-linear-gradient(180deg, #000 0 2px, rgba(0,0,0,.34) 2px 3px);
+          mask-image: repeating-linear-gradient(180deg, #000 0 2px, rgba(0,0,0,.34) 2px 3px);
+  animation: flicker 5.3s infinite, jitter 7.1s infinite; }
+.crt-signal { color: var(--signal); filter: drop-shadow(0 0 3px rgba(255, 50, 30, .65)) drop-shadow(0 0 10px rgba(255, 40, 20, .3));
+  text-shadow: -1px 0 rgba(255, 0, 120, .55), 1px 0 rgba(255, 170, 40, .45); }
+.crt-ink { color: var(--ink); text-shadow: -1.2px 0 rgba(255, 0, 70, .38), 1.2px 0 rgba(0, 150, 255, .38), 0 0 1px rgba(0,0,0,.5); }
+.crt-red { color: var(--signal); text-shadow: -1.2px 0 rgba(255, 0, 140, .45), 1.2px 0 rgba(255, 160, 0, .45), 0 0 10px rgba(255, 40, 20, .35); }
+@keyframes flicker { 0%, 100% { opacity: 1; } 41% { opacity: 1; } 42% { opacity: .82; } 43% { opacity: 1; } 77% { opacity: .94; } 78% { opacity: 1; } }
+@keyframes jitter { 0%, 95%, 100% { transform: translateX(0); } 96% { transform: translateX(1.6px); } 97% { transform: translateX(-1px); } 98% { transform: translateX(.5px); } }
+@keyframes crt-on { 0% { opacity: 0; transform: scale(.5, .02); filter: brightness(3); } 30% { opacity: 1; transform: scale(1, .02); }
+  70% { transform: scale(1, 1.08); filter: brightness(1.6); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes crt-off { 0% { opacity: 1; transform: none; } 45% { opacity: 1; transform: scale(1, .02); filter: brightness(2.6); } 100% { opacity: 0; transform: scale(0, .02); } }
+
+/* VHS caption over the turning planet */
+/* hand-drawn callouts pinned to places on the turning globe */
+#notes { position: fixed; inset: 0; z-index: 24; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+#notes .note { opacity: 0; transition: opacity .45s ease; }
+#notes .note.on { opacity: 1; }
+#notes path { fill: none; stroke: rgba(238, 238, 232, .86); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; filter: url(#pencil);
+  stroke-dasharray: 100; stroke-dashoffset: 100; transition: stroke-dashoffset .6s cubic-bezier(.6,0,.2,1); }
+#notes .note.on path { stroke-dashoffset: 0; }
+#notes circle { fill: none; stroke: rgba(238, 238, 232, .92); stroke-width: 2.2; filter: url(#pencil); }
+#notes text { fill: #f3f3ee; font: 600 13px var(--f-display); letter-spacing: .01em; opacity: 0; transition: opacity .35s ease .25s;
+  paint-order: stroke; stroke: rgba(0, 0, 0, .65); stroke-width: 3px; stroke-linejoin: round; }
+#notes .note.on text { opacity: 1; }
+#vhs { position: fixed; z-index: 26; top: calc(22px + env(safe-area-inset-top, 0px)); left: 8px; margin: 0; pointer-events: none;
+  font-family: var(--f-vhs); font-size: clamp(26px, 2.8vw, 40px); line-height: 1; color: #f2f2ee; letter-spacing: .02em; text-transform: lowercase;
+  text-shadow: -2px 0 rgba(255, 20, 70, .8), 2px 0 rgba(0, 210, 255, .75), 0 0 8px rgba(255, 255, 255, .4);
+  -webkit-mask-image: repeating-linear-gradient(180deg, #000 0 1px, rgba(0,0,0,.42) 1px 2px);
+          mask-image: repeating-linear-gradient(180deg, #000 0 1px, rgba(0,0,0,.42) 1px 2px);
+  opacity: 0; transition: opacity 1.2s ease; padding: 10px 48px 10px 24px; }
+#vhs.show { opacity: 1; animation: vhs-wobble 4.7s infinite; }
+#vhs span { display: block; filter: blur(.35px); }
+#vhs::after { content: attr(data-text); position: absolute; left: 24px; top: 10px; color: #f2f2ee; filter: blur(.5px);
+  text-shadow: -3px 0 rgba(255, 20, 70, .9), 3px 0 rgba(0, 210, 255, .85); clip-path: inset(100% 0 0 0); animation: vhs-track 3.9s infinite steps(1); }
+@keyframes vhs-wobble { 0%, 100% { transform: translateX(0) skewX(0); } 31% { transform: translateX(0); } 32% { transform: translateX(-2px) skewX(-2deg); }
+  33% { transform: translateX(1px); } 34% { transform: none; } 71% { transform: translateX(.6px); } 72% { transform: none; } }
+@keyframes vhs-track { 0% { clip-path: inset(100% 0 0 0); transform: none; } 30% { clip-path: inset(15% 0 70% 0); transform: translateX(7px); }
+  33% { clip-path: inset(55% 0 30% 0); transform: translateX(-5px); } 36% { clip-path: inset(100% 0 0 0); } 80% { clip-path: inset(72% 0 12% 0); transform: translateX(4px); } 82% { clip-path: inset(100% 0 0 0); } }
+
+/* red marks */
+.mark { position: fixed; left: 0; top: 0; z-index: 25; pointer-events: none; opacity: 0; transition: opacity .5s; }
+.mark.show { opacity: 1; }
+.mark .crt { display: block; padding: 40px 44px 14px; margin: -40px -44px -14px; } /* room for label + glow inside the scanline mask */
+.mark svg { display: block; overflow: visible; }
+.mark rect { fill: none; stroke: var(--signal); stroke-width: 1.6; stroke-dasharray: 100; stroke-dashoffset: 100; transition: stroke-dashoffset 1s cubic-bezier(.6,0,.2,1); }
+.mark.show rect { stroke-dashoffset: 0; }
+.mark-label { position: absolute; left: 50%; bottom: calc(100% - 40px); translate: -50% -6px; font-weight: 600; letter-spacing: .14em;
+  padding-left: .14em; white-space: nowrap; opacity: 0; text-transform: lowercase; }
+.mark.show .mark-label { animation: crt-on .5s .75s cubic-bezier(.2,.7,.3,1) forwards; }
+
+#pbd-mark .mark-label { font-size: 18px; }
+#pbd-words { position: absolute; left: 7%; top: 50%; transform: translateY(-50%); margin: 0; z-index: 2; color: #f2f2ee; pointer-events: none;
+  font-family: var(--f-display); font-size: clamp(30px, 3.8vw, 58px); font-weight: 500; line-height: 1.12; letter-spacing: -0.01em; text-transform: lowercase;
+  text-shadow: 0 0 18px rgba(0, 0, 0, .6); }
+
+#moon-mark .mark-label { font-size: 15px; letter-spacing: .1em; }
+#moon-mark .crt { padding: 40px 180px 14px; margin: -40px -180px -14px; }
+#globe-mark { pointer-events: none; transition: none; }
+#globe-mark rect { stroke-dashoffset: 0; transition: none; }
+#globe-mark .mark-label { animation: none !important; opacity: 1; }
+#globe-mark.show.facing { pointer-events: auto; cursor: pointer; }
+#globe-mark .fill { position: absolute; left: 1px; top: 1px; width: 24px; height: 24px; background: var(--paper); transition: transform .25s ease; }
+#globe-mark .mark-label { font-size: 15px; letter-spacing: .12em; translate: -50% -4px; }
+#globe-mark .box-wrap { transition: transform .25s ease; }
+#globe-mark:hover .box-wrap, #globe-mark:focus-visible .box-wrap, #globe-mark:hover .fill, #globe-mark:focus-visible .fill { transform: scale(1.18); }
+
+#portal { position: fixed; z-index: 30; background: var(--paper); border: 1.6px solid var(--signal); box-sizing: border-box; display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  #s-deep .drift, .crt, #vhs.show, #vhs::after, #worries li.glitch .ch { animation: none; }
+}
+</style>
+</head>
+<body>
+<section id="s-deep" class="layer on" aria-label="hubble extreme deep field. click to go in.">
+  <div class="drift"><div class="plate"></div></div>
+  <a id="cite" href="https://www.tiktok.com/@sopaguada/video/7690600273236004103" target="_blank" rel="noopener">after a reel by @sopaguada</a>
+</section>
+<div id="blind"></div>
+<div id="lone" aria-hidden="true"></div>
+
+<section id="s-pbd" class="layer" aria-label="pale blue dot. click to zoom out.">
+  <img id="pbd" src="img/paleblue.jpg" alt="earth as a single point of light suspended in a tall pillar of dust between black space">
+  <p id="pbd-words" aria-live="polite"></p>
+</section>
+<div id="pbd-mark" class="mark" aria-hidden="true">
+  <div class="crt crt-signal">
+    <span class="mark-label">you</span>
+    <svg width="42" height="42" viewBox="0 0 42 42"><rect x="0.8" y="0.8" width="40.4" height="40.4" pathLength="100"/></svg>
+  </div>
+</div>
+
+<section id="s-globe" class="layer" aria-label="earth. drag to spin it, or click empty space to zoom out.">
+  <canvas id="globe"></canvas>
+</section>
+<p id="vhs" data-text="that's a whole planet"><span>that's a whole planet</span></p>
+<svg id="notes" aria-hidden="true">
+  <defs><filter id="pencil" filterUnits="userSpaceOnUse" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="2" seed="4"/><feDisplacementMap in="SourceGraphic" scale="1.8"/>
+  </filter></defs>
+</svg>
+<button id="globe-mark" class="mark" aria-label="go into you">
+  <span class="fill"></span>
+  <div class="crt crt-signal">
+    <span class="mark-label">you</span>
+    <div class="box-wrap"><svg width="26" height="26" viewBox="0 0 26 26"><rect x="0.8" y="0.8" width="24.4" height="24.4" pathLength="100"/></svg></div>
+  </div>
+</button>
+
+<div id="moon-mark" class="mark" aria-hidden="true">
+  <div class="crt crt-signal">
+    <span class="mark-label">everybody who has ever lived</span>
+    <svg width="60" height="60" viewBox="0 0 60 60"><rect x="0.8" y="0.8" width="58.4" height="58.4" pathLength="100"/></svg>
+  </div>
+</div>
+
+<section id="s-wall" class="layer" aria-label="a paper earth pinned to the wall beside five photographs. take out the earth's pin to go on.">
+  <div id="wall-earth" class="w-obj"><img src="img/paperearth.webp" alt="a child's pencil drawing of the earth, cut out of paper"></div>
+  <div class="polaroid w-obj" data-k="dunes"><img src="img/p_dunes.jpg" alt="the crest of a sand dune"><i class="shade"></i></div>
+  <div class="polaroid w-obj" data-k="butterfly"><img src="img/p_butterfly.jpg" alt="a butterfly on a leaf"><i class="shade"></i></div>
+  <div class="polaroid w-obj" data-k="glacier"><img src="img/p_glacier.jpg" alt="a glacier"><i class="shade"></i></div>
+  <div class="polaroid w-obj" data-k="hands"><img src="img/p_hands.jpg" alt="two hands almost touching"><i class="shade"></i></div>
+  <div class="polaroid w-obj" data-k="sunset"><img src="img/p_sunset.jpg" alt="a sunset over the sea"><i class="shade"></i></div>
+  <p id="wall-words"><span class="crt crt-ink">this is all we have</span></p>
+</section>
+
+<section id="s-room" class="layer" aria-label="inside you">
+  <canvas id="room-c"></canvas>
+  <ol id="worries">
+    <li class="me" style="--x: 4%; --y: 6%"><span class="crt crt-ink">me</span></li>
+    <li style="--x: 36%; --y: 40%"><span class="crt crt-ink">my worries</span></li>
+    <li style="--x: 9%; --y: 57%"><span class="crt crt-ink">my fears</span></li>
+    <li style="--x: 44%; --y: 77%"><span class="crt crt-red">my life</span></li>
+  </ol>
+  <button id="leave" aria-label="zoom out">×</button>
+</section>
+
+<div id="portal"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const T = ms => RM ? ms * 0.35 : ms;
+const sleep = ms => new Promise(r => setTimeout(r, T(ms)));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const E = {
+  inOut: t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+  in2: t => t * t,
+  in3: t => t * t * t,
+  out3: t => 1 - Math.pow(1 - t, 3),
+  out4: t => 1 - Math.pow(1 - t, 4),
+  sine: t => .5 - Math.cos(Math.PI * t) / 2,
+};
+function tween(ms, fn, ease = E.inOut) {
+  return new Promise(res => {
+    const d = T(ms); let s = null;
+    const f = now => { if (s === null) s = now; const t = Math.min(1, (now - s) / d); fn(ease(t), t); t < 1 ? requestAnimationFrame(f) : res(); };
+    requestAnimationFrame(f);
+  });
+}
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+const deep = $('#s-deep'), deepPlate = $('#s-deep .plate'), blind = $('#blind');
+const pbdL = $('#s-pbd'), pbdImg = $('#pbd'), pbdMark = $('#pbd-mark');
+const globeL = $('#s-globe'), globeMark = $('#globe-mark'), vhs = $('#vhs'), moonMark = $('#moon-mark'), moonSvg = $('#moon-mark svg'), moonRect = $('#moon-mark rect');
+const room = $('#s-room'), portal = $('#portal');
+
+let scene = 'deep', busy = false;
+
+/* ---------- galaxy ---------- */
+// the galaxy the pinhole closes on, in deepfield.jpg pixels (2000 × 1512)
+const GAL = { x: 1030, y: 723, w: 2000, h: 1512 };
+function galaxyPt() {
+  const r = deepPlate.getBoundingClientRect(), w0 = deepPlate.offsetWidth, h0 = deepPlate.offsetHeight;
+  const s = Math.max(w0 / GAL.w, h0 / GAL.h);
+  const ox = (w0 - GAL.w * s) / 2 + GAL.x * s, oy = (h0 - GAL.h * s) / 2 + GAL.y * s;
+  return { x: r.left + ox * r.width / w0, y: r.top + oy * r.height / h0, ox, oy };
+}
+
+/* ---------- pale blue dot layout ---------- */
+// The dot sits at (2880, 1792) of the 4800 × 3200 plate (the 2020 image at its native resolution).
+const PBD = { w: 4800, h: 3200, ex: .6, ey: .56 };
+let earthPt = { x: innerWidth / 2, y: innerHeight / 2 };
+function layoutPBD() {
+  const vw = innerWidth, vh = innerHeight;
+  const s = Math.max(vw / PBD.w, vh / PBD.h) * 1.02;
+  const W = PBD.w * s, H = PBD.h * s;
+  let left = (vw - W) / 2, top = (vh - H) / 2;
+  if (left + PBD.ex * W > vw * .7) left = vw * .7 - PBD.ex * W;
+  if (top + PBD.ey * H > vh * .64) top = vh * .64 - PBD.ey * H;
+  left = clamp(left, vw - W, 0); top = clamp(top, vh - H, 0);
+  Object.assign(pbdImg.style, { width: W + 'px', height: H + 'px', left: left + 'px', top: top + 'px', transformOrigin: `${PBD.ex * W}px ${PBD.ey * H}px` });
+  earthPt = { x: left + PBD.ex * W, y: top + PBD.ey * H };
+  pbdMark.style.transform = `translate(${earthPt.x - 21}px, ${earthPt.y - 21}px)`;
+}
+layoutPBD();
+
+/* ---------- globe + moon (three.js) ---------- */
+const YOU = { lat: 50, lon: 10 }; // where the "you" square sits on the globe
+const EXAG = 0.045;               // elevation exaggeration (≈ 200× real relief)
+const SUN = window.THREE ? new THREE.Vector3(-1.5, 1.35, 1.25).normalize() : null, SUN0 = SUN && SUN.clone();
+const EXPOSURE = { value: 1 }, PALE = { value: 0 };
+let sunLight, stars, glow;
+const canvas = $('#globe');
+let renderer, camera, scene3, tiltG, earth, moon, youLocal, earthReady = Promise.resolve(), globeOn = false, frozen = false;
+let spin = .07, BASE_SPIN = .07, tilt = .28, zoomF = 1;
+const cam = { pos: null, look: null, fov: 35, yaw: 0, pitch: 0, tyaw: 0, tpitch: 0 };
+const zBase = () => Math.max(4.1, 3.7 / (innerWidth / innerHeight));
+
+function loadImage(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
+
+function earthMaterial(tex) {
+  return new THREE.ShaderMaterial({
+    uniforms: { map: { value: tex }, sunDir: { value: SUN }, exposure: EXPOSURE, pale: PALE },
+    vertexShader: `
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
+      varying vec2 vUv; varying vec3 vN; varying vec3 vS; varying vec3 vW;
+      void main() {
+        vUv = uv;
+        vN = normalize(mat3(modelMatrix) * normal);
+        vS = normalize(mat3(modelMatrix) * normalize(position));
+        vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w;
+        #include <logdepthbuf_vertex>
+      }`,
+    fragmentShader: `
+      #include <logdepthbuf_pars_fragment>
+      uniform sampler2D map; uniform vec3 sunDir; uniform float exposure; uniform float pale;
+      varying vec2 vUv; varying vec3 vN; varying vec3 vS; varying vec3 vW;
+      void main() {
+        #include <logdepthbuf_fragment>
+        vec3 c = texture2D(map, vUv).rgb;
+        vec3 N = normalize(vN), S = normalize(vS);
+        // matte: plain diffuse, soft terminator, relief from the displaced normals
+        // night side: no ambient floor, a long smooth fall into black
+        float lit = smoothstep(-0.3, 0.85, dot(N, sunDir));
+        lit = pow(lit, 1.8);
+        float relief = clamp(1.0 + 3.0 * (dot(N, sunDir) - dot(S, sunDir)), 0.4, 1.45);
+        vec3 col = c * 1.14 * lit * mix(1.0, relief, 0.75 * lit);
+        // just before the cut the planet shines and goes the whitish blue of the dot, still shaded in 3D
+        col = mix(col, vec3(0.80, 0.88, 1.0) * (0.25 + 1.1 * lit), pale);
+        col *= exposure;
+        // the faintest air on the sunlit limb
+        float mu = clamp(dot(S, normalize(cameraPosition - vW)), 0.0, 1.0);
+        float day = smoothstep(-0.05, 0.55, dot(S, sunDir));
+        col += vec3(0.32, 0.52, 0.95) * pow(1.0 - mu, 3.0) * day * 0.2;
+        float n = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+        col += (n - 0.5) / 255.0;
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  });
+}
+
+function sampler(img) {
+  const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height).data, w = c.width, h = c.height;
+  return (u, v) => {
+    const x = ((u % 1) + 1) % 1 * (w - 1), y = clamp((1 - v) * (h - 1), 0, h - 1);
+    const x0 = Math.floor(x), y0 = Math.floor(y), x1 = Math.min(w - 1, x0 + 1), y1 = Math.min(h - 1, y0 + 1), fx = x - x0, fy = y - y0;
+    const p = (xx, yy) => d[(yy * w + xx) * 4] / 255;
+    return lerp(lerp(p(x0, y0), p(x1, y0), fx), lerp(p(x0, y1), p(x1, y1), fx), fy);
+  };
+}
+
+/* procedural lunar foreground: craters on gently curved ground */
+function hash2(x, y) { let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+function vnoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi, yi), b = hash2(xi + 1, yi), c = hash2(xi, yi + 1), d = hash2(xi + 1, yi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+// one albedo pattern for the whole moon, so the close-up patch and the sphere read as the same ground
+// (coordinates are relative to the sphere's centre)
+const moonAlbedo = (x, y, z) => .7 + .28 * vnoise(x * .03 + 7, z * .03 + y * .02) + .12 * vnoise(x * .2, y * .2 + z * .1);
+function buildMoon() {
+  const Rm = 200, NR = 300, NC = 400, ZMAX = 26, SINK = -.25;
+  const smooth = (a, b, v) => { const q = clamp((v - a) / (b - a), 0, 1); return q * q * (3 - 2 * q); };
+  let seed = 9; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const bucket = new Map(), key = (i, j) => i + ',' + j;
+  const add = (x, z, r) => {
+    const c = { x, z, r }, e = r * 1.7;
+    for (let i = Math.floor(x - e); i <= Math.floor(x + e); i++) for (let j = Math.floor(z - e); j <= Math.floor(z + e); j++) {
+      const k = key(i, j); if (!bucket.has(k)) bucket.set(k, []); bucket.get(k).push(c);
+    }
+  };
+  for (let i = 0; i < 16; i++) add((rnd() - .5) * 40, -2 - rnd() * 23, .8 + rnd() * 2.2);
+  for (let i = 0; i < 220; i++) add((rnd() - .5) * 36, -.4 - rnd() * 24, .15 + rnd() * .6);
+  for (let i = 0; i < 2200; i++) add((rnd() - .5) * 20, -.1 - rnd() * 11, .02 + Math.pow(rnd(), 2.2) * .14);
+  const height = (x, z) => {
+    let h = (vnoise(x * .07 + 3.1, z * .07 - 8.4) - .5) * .5, amp = .045, f = .4;
+    for (let o = 0; o < 7; o++) { h += (vnoise(x * f + 31.7, z * f - 12.1) - .5) * amp; amp *= .5; f *= 2.1; }
+    const list = bucket.get(key(Math.floor(x), Math.floor(z)));
+    if (list) for (const c of list) {
+      const q = Math.hypot(x - c.x, z - c.z) / c.r;
+      if (q < 1) h -= c.r * .16 * (1 - q * q);
+      if (q < 1.7) h += c.r * .05 * Math.exp(-Math.pow((q - 1) / .2, 2));
+    }
+    return h;
+  };
+  const pos = new Float32Array(NR * NC * 3), col = new Float32Array(NR * NC * 3);
+  for (let i = 0; i < NR; i++) {
+    // rows start just behind the camera so the near ground is never missing
+    const t = i / (NR - 1), d = -1.5 + t * t * (ZMAX + 1.5), hw = 1.6 + Math.abs(d) * 1.1;
+    for (let j = 0; j < NC; j++) {
+      const u = -1 + 2 * j / (NC - 1), x = u * hw, z = -d;
+      // feather the patch into the sphere: toward its sides and far edge the relief sinks to the sphere's surface
+      const w = (1 - smooth(.72, 1, Math.abs(u))) * (1 - smooth(.9, 1, t)) * smooth(-1.5, 1.2, d);
+      // the deepest crater floors flatten onto the sphere, so the patch never stands proud of it
+      const y = lerp(SINK, Math.max(height(x, z), SINK + .02), w) - (x * x + d * d) / (2 * Rm);
+      const k = (i * NC + j) * 3;
+      pos[k] = x; pos[k + 1] = y; pos[k + 2] = z;
+      const a = moonAlbedo(x, y + Rm, z) + (vnoise(x * 1.7 + 5, z * 1.7) - .5) * .14 * w + (vnoise(x * 9, z * 9) - .5) * .06 * w;
+      col[k] = a; col[k + 1] = a * .985; col[k + 2] = a * .96;
+    }
+  }
+  const idx = [];
+  for (let i = 0; i < NR - 1; i++) for (let j = 0; j < NC - 1; j++) {
+    const a = i * NC + j, b = a + 1, c = a + NC, d = c + 1;
+    idx.push(a, b, c, b, d, c); // counter-clockwise from above: faces point up
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x6c6965, roughness: 1, metalness: 0, vertexColors: true, side: THREE.DoubleSide }));
+  // the whole moon beneath the patch: same curvature, sunk a little below the crater floors
+  const sph = new THREE.SphereGeometry(Rm + SINK, 384, 192), sp = sph.attributes.position, sc = new Float32Array(sp.count * 3);
+  for (let i = 0; i < sp.count; i++) {
+    const x = sp.getX(i), y = sp.getY(i), z = sp.getZ(i);
+    const a = moonAlbedo(x, y, z);
+    sc.set([a, a * .985, a * .96], i * 3);
+  }
+  sph.setAttribute('color', new THREE.BufferAttribute(sc, 3));
+  const body = new THREE.Mesh(sph, new THREE.MeshStandardMaterial({ color: 0x6c6965, roughness: 1, metalness: 0, vertexColors: true }));
+  body.position.set(0, -Rm, 0);
+  m.add(body);
+  m.visible = false;
+  return m;
+}
+
+function initGlobe() {
+  if (!window.THREE) return false;
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight, false);
+  renderer.setClearColor(0x000000, 1);
+  renderer.outputEncoding = THREE.sRGBEncoding; // affects the moon's lit material; the earth shader writes its own values
+  scene3 = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, .01, 5e6);
+  cam.pos = new THREE.Vector3(0, 0, 60); cam.look = new THREE.Vector3();
+  tiltG = new THREE.Group(); scene3.add(tiltG);
+
+  sunLight = new THREE.DirectionalLight(0xffffff, .85); sunLight.position.copy(SUN).multiplyScalar(10); scene3.add(sunLight);
+  scene3.add(new THREE.AmbientLight(0xffffff, .05));
+
+  const n = 1800, pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, r = 300 + Math.random() * 200, s = Math.sqrt(1 - u * u);
+    pos.set([r * s * Math.cos(th), r * u, r * s * Math.sin(th)], i * 3);
+  }
+  const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: .75, transparent: true, opacity: .5, sizeAttenuation: true }));
+  scene3.add(stars);   // re-centred on the eye every frame, so they read as infinitely far
+  // a soft point of light that takes over when the earth is a few pixels wide
+  const gc = document.createElement('canvas'); gc.width = gc.height = 64;
+  const gx = gc.getContext('2d'), gr = gx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(235,242,255,1)'); gr.addColorStop(.22, 'rgba(180,205,255,.55)'); gr.addColorStop(1, 'rgba(120,160,255,0)');
+  gx.fillStyle = gr; gx.fillRect(0, 0, 64, 64);
+  glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(gc), blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, transparent: true, opacity: 0 }));
+  glow.visible = false; scene3.add(glow);
+
+  moon = buildMoon(); scene3.add(moon);
+
+  earthReady = Promise.all([loadImage('img/earthmap.jpg'), loadImage('img/earthtopo.jpg')]).then(([map, topo]) => {
+    const tex = new THREE.Texture(map); tex.needsUpdate = true; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const hAt = sampler(topo);
+    const geo = new THREE.SphereGeometry(1, 512, 256);
+    const P = geo.attributes.position, UV = geo.attributes.uv;
+    for (let i = 0; i < P.count; i++) {
+      const s = 1 + hAt(UV.getX(i), UV.getY(i)) * EXAG;
+      P.setXYZ(i, P.getX(i) * s, P.getY(i) * s, P.getZ(i) * s);
+    }
+    geo.computeVertexNormals();
+    // the sphere duplicates vertices along the 180° meridian; give both copies the same normal so no seam shows
+    const NM = geo.attributes.normal, row = 513;
+    for (let y = 0; y <= 256; y++) {
+      const a = y * row, b = a + 512;
+      const nx = NM.getX(a) + NM.getX(b), ny = NM.getY(a) + NM.getY(b), nz = NM.getZ(a) + NM.getZ(b), l = Math.hypot(nx, ny, nz) || 1;
+      NM.setXYZ(a, nx / l, ny / l, nz / l); NM.setXYZ(b, nx / l, ny / l, nz / l);
+    }
+    tex.wrapS = THREE.RepeatWrapping;
+    earth = new THREE.Mesh(geo, earthMaterial(tex));
+    tiltG.add(earth);
+    // thin halo, only where the sun is
+    tiltG.add(new THREE.Mesh(new THREE.SphereGeometry(1.06, 96, 64), new THREE.ShaderMaterial({
+      side: THREE.BackSide, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
+      uniforms: { sunDir: { value: SUN } },
+      vertexShader: `
+        #include <common>
+        #include <logdepthbuf_pars_vertex>
+        varying vec3 vN; varying vec3 vWN;
+        void main() {
+          vN = normalize(normalMatrix * normal); vWN = normalize(mat3(modelMatrix) * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          #include <logdepthbuf_vertex>
+        }`,
+      fragmentShader: `
+        #include <logdepthbuf_pars_fragment>
+        uniform vec3 sunDir; varying vec3 vN; varying vec3 vWN;
+        void main() {
+          #include <logdepthbuf_fragment>
+          float i = pow(clamp(-normalize(vN).z / 0.33, 0.0, 1.0), 2.4);
+          float s = smoothstep(-0.1, 0.6, dot(normalize(vWN), sunDir));
+          gl_FragColor = vec4(vec3(0.42, 0.64, 1.0) * i * s * 0.32, 1.0);
+        }`,
+    })));
+    const la = YOU.lat * Math.PI / 180, lo = YOU.lon * Math.PI / 180;
+    const hY = 1 + hAt(.5 + YOU.lon / 360, .5 + YOU.lat / 180) * EXAG + .004;
+    youLocal = new THREE.Vector3(Math.cos(la) * Math.cos(lo), Math.sin(la), -Math.cos(la) * Math.sin(lo)).multiplyScalar(hY);
+    buildNotes(hAt);
+    resetGlobeAngle();
+  });
+  return true;
+}
+function resetGlobeAngle() { if (earth) earth.rotation.y = -Math.PI / 2 - YOU.lon * Math.PI / 180 - .32; tilt = .28; spin = BASE_SPIN; }
+const glReady = initGlobe();
+
+let markPt = { x: 0, y: 0, facing: 0 }, markFade = 1;   // markFade lets the CRT square ease in and out
+const _w = glReady ? new THREE.Vector3() : null, _c = glReady ? new THREE.Vector3() : null, _l = glReady ? new THREE.Vector3() : null;
+// little lives, pinned to land (every point checked against the map)
+const NOTES = [
+  ['just had a child', 7.4, 3.9], ['mother just died', -23.5, -46.6], ['just graduated from secondary school', 18.5, 73.9],
+  ['slipped on a banana', 19.4, -99.1], ['just had breakfast', 39.9, 116.4], ['just took a massive dump', 39.7, -105.0],
+  ['just fell in love', 30.0, 31.2], ['can\'t sleep again', 55.8, 37.6], ['first day at a new job', -1.3, 36.8], ['lost their keys again', -23.7, 133.9],
+];
+const notesSvg = $('#notes'), notes = [];
+function buildNotes(hAt) {
+  const NS = 'http://www.w3.org/2000/svg';
+  NOTES.forEach(([label, lat, lon], i) => {
+    const la = lat * Math.PI / 180, lo = lon * Math.PI / 180, h = 1 + hAt(.5 + lon / 360, .5 + lat / 180) * EXAG + .003;
+    const g = document.createElementNS(NS, 'g'); g.setAttribute('class', 'note');
+    const c = document.createElementNS(NS, 'circle'); c.setAttribute('r', '5');
+    const p = document.createElementNS(NS, 'path'); p.setAttribute('pathLength', '100');
+    const t = document.createElementNS(NS, 'text'); t.textContent = label;
+    g.append(p, c, t); notesSvg.append(g);
+    notes.push({ g, c, p, t, w: 0, vis: false, legs: [16 + (i % 2) * 8, 26 + (i % 3) * 16],
+      local: new THREE.Vector3(Math.cos(la) * Math.cos(lo), Math.sin(la), -Math.cos(la) * Math.sin(lo)).multiplyScalar(h) });
+  });
+}
+const _n = glReady ? new THREE.Vector3() : null, _gc = glReady ? new THREE.Vector3() : null;
+// the labels arrive one at a time: the first together with "you" and the caption, then one more every 3 s,
+// each time picking whichever not-yet-shown place is turned most toward us
+let noteNext = 0;
+function resetNotes() { notes.forEach(n => { n.unlocked = false; }); noteNext = 0; }
+function unlockNotes(show) {
+  if (!show) return;
+  const now = performance.now();
+  if (!noteNext) noteNext = now;   // the first arrives with "you" and the caption
+  if (now < noteNext) return;
+  // only ever unlock a place that is actually turned toward us, so each one appears the moment it's unlocked
+  const ready = notes.filter(n => !n.unlocked && (n.facing || -1) > .35).sort((a, b) => b.facing - a.facing);
+  if (!ready.length) return;
+  ready[0].unlocked = true;
+  noteNext = now + 3000;
+}
+function updateNotes() {
+  if (!notes.length) return;
+  const show = scene === 'globe' && !frozen && globeMark.classList.contains('show');
+  _gc.copy(tiltG.position).project(camera);
+  const cx = (_gc.x + 1) / 2 * innerWidth, cy = (1 - _gc.y) / 2 * innerHeight;
+  const placed = [{ l: markPt.x - 30, r: markPt.x + 30, t: markPt.y - 40, b: markPt.y + 16 }];   // keep clear of the "you" square
+  for (const n of notes) {
+    _n.copy(n.local); earth.localToWorld(_n);
+    const facing = _n.clone().sub(tiltG.position).normalize().dot(_c.copy(camera.position).sub(_n).normalize());
+    n.facing = facing;
+    const vis = show && n.unlocked && facing > .3;
+    _n.project(camera);
+    const x = (_n.x + 1) / 2 * innerWidth, y = (1 - _n.y) / 2 * innerHeight;
+    if (!n.w) n.w = n.t.getComputedTextLength() || n.t.textContent.length * 6.5;
+    // leader like a pencil callout: out from the circle, a diagonal, then a run under the label.
+    // Try the natural direction first, keep last frame's choice while it still fits, and never collide with a placed label.
+    const [l1, l2] = n.legs, nat = [x >= cx ? 1 : -1, y <= cy ? -1 : 1];
+    const box = (sx, sy) => {
+      const cxp = x + sx * (5 + l1 + l2 * .7), cyp = y + sy * l2, far = cxp + sx * (n.w + 6);
+      return { sx, sy, cxp, cyp, l: Math.min(x, far) - 2, r: Math.max(x, far) + 2, t: Math.min(y, cyp - 20) - 2, b: Math.max(y, cyp + 2) + 2 };
+    };
+    const fits = o => o.l > 6 && o.r < innerWidth - 6 && o.t > 6 && o.b < innerHeight - 6 && !placed.some(q => o.l < q.r && o.r > q.l && o.t < q.b && o.b > q.t);
+    const tries = [n.dir, nat, [nat[0], -nat[1]], [-nat[0], nat[1]], [-nat[0], -nat[1]]].filter(Boolean);
+    let o = null;
+    if (vis) for (const [a, b] of tries) { const c = box(a, b); if (fits(c)) { o = c; break; } }
+    const shown = vis && !!o;
+    if (shown !== n.vis) { n.vis = shown; n.g.classList.toggle('on', shown); }
+    if (o) { n.dir = [o.sx, o.sy]; placed.push(o); }
+    else o = box(...(n.dir || nat));   // still track the surface while fading out, so nothing is left floating
+    const { sx, sy, cxp, cyp } = o, ax = x + sx * 5, bx = ax + sx * l1, dx = cxp + sx * (n.w + 6);
+    n.c.setAttribute('cx', x.toFixed(1)); n.c.setAttribute('cy', y.toFixed(1));
+    n.p.setAttribute('d', `M${ax.toFixed(1)} ${y.toFixed(1)}L${bx.toFixed(1)} ${(y + sy * 1.5).toFixed(1)}L${cxp.toFixed(1)} ${cyp.toFixed(1)}L${dx.toFixed(1)} ${(cyp - 2).toFixed(1)}`);
+    n.t.setAttribute('x', (cxp + sx * 3).toFixed(1)); n.t.setAttribute('y', (cyp - 7).toFixed(1));
+    n.t.setAttribute('text-anchor', sx > 0 ? 'start' : 'end');
+  }
+  unlockNotes(show);
+}
+function updateGlobeMark() {
+  if (!earth) return;
+  _w.copy(youLocal); earth.localToWorld(_w);
+  const facing = _w.clone().normalize().dot(_c.copy(camera.position).sub(_w).normalize());
+  _w.project(camera);
+  markPt = { x: (_w.x + 1) / 2 * innerWidth, y: (1 - _w.y) / 2 * innerHeight, facing };
+  globeMark.style.transform = `translate(${markPt.x - 13}px, ${markPt.y - 13}px)`;
+  const a = clamp((facing - .1) / .25, 0, 1);
+  globeMark.style.setProperty('opacity', globeMark.classList.contains('show') ? a * markFade : 0);
+  globeMark.classList.toggle('facing', facing > .2);
+  updateNotes();
+}
+let last = performance.now();
+function frame(dt) {
+  if (earth) {
+    if (!frozen && !(drag.on && drag.moved >= 6)) { earth.rotation.y += spin * dt; spin += (BASE_SPIN - spin) * (1 - Math.exp(-dt * .32)); }
+    tiltG.rotation.x = tilt;
+  }
+  cam.yaw += (cam.tyaw - cam.yaw) * .05; cam.pitch += (cam.tpitch - cam.pitch) * .05;
+  camera.position.copy(cam.pos);
+  stars.position.copy(cam.pos);
+  if (camera.fov !== cam.fov) { camera.fov = cam.fov; camera.updateProjectionMatrix(); }
+  const dist = cam.pos.distanceTo(cam.look);
+  _l.copy(cam.look); _l.x += Math.tan(cam.yaw) * dist; _l.y += Math.tan(cam.pitch) * dist;
+  camera.lookAt(_l);
+  if (glow.visible) {
+    glow.position.copy(tiltG.position);
+    const px = 2 * camera.position.distanceTo(tiltG.position) * Math.tan(camera.fov * Math.PI / 360) / innerHeight;
+    glow.scale.setScalar(20 * px);
+  }
+  renderer.render(scene3, camera);
+  updateGlobeMark();
+  if (moonMark.classList.contains('show')) updateMoonMark();
+}
+// red box hugging the whole earth in the moon view
+const _e = glReady ? new THREE.Vector3() : null;
+function updateMoonMark() {
+  _e.set(0, 0, 0).project(camera);
+  const x = (_e.x + 1) / 2 * innerWidth, y = (1 - _e.y) / 2 * innerHeight;
+  const dist = camera.position.length();
+  const r = (1.05 / dist) / Math.tan(camera.fov * Math.PI / 360) * innerHeight / 2;
+  const side = Math.round(r * 2 + 22);
+  moonSvg.setAttribute('width', side); moonSvg.setAttribute('height', side); moonSvg.setAttribute('viewBox', `0 0 ${side} ${side}`);
+  moonRect.setAttribute('width', side - 1.6); moonRect.setAttribute('height', side - 1.6);
+  moonMark.style.transform = `translate(${x - side / 2}px, ${y - side / 2}px)`;
+}
+function globeLoop(now) {
+  if (!globeOn) return;
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  frame(dt);
+  requestAnimationFrame(globeLoop);
+}
+function startGlobe() { if (globeOn) return; globeOn = true; last = performance.now(); requestAnimationFrame(globeLoop); }
+function globeView(z) { cam.pos.set(0, 0, z); cam.look.set(0, 0, 0); cam.fov = 35; cam.yaw = cam.pitch = cam.tyaw = cam.tpitch = 0; }
+
+// drag to rotate, fling to speed up, wheel to zoom
+const drag = { on: false, x: 0, y: 0, sx: 0, sy: 0, t: 0, vel: 0, moved: 0 };
+let spaceMoving = false;   // true while the camera travels globe → moon → dot
+const spinnable = () => !!earth && globeOn && (scene === 'globe' || scene === 'moon' || spaceMoving);
+globeL.addEventListener('pointerdown', e => {
+  if (!(spinnable() )) return;
+  Object.assign(drag, { on: true, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), vel: 0, moved: 0 });
+  globeL.setPointerCapture(e.pointerId);
+  if (scene === 'globe') globeL.classList.add('dragging');
+});
+globeL.addEventListener('pointermove', e => {
+  if (!drag.on) return;
+  drag.moved = Math.max(drag.moved, Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy));
+  if (!spinnable()) return;   // from the globe, from the moon's horizon, and all through the moves between them
+  const now = performance.now(), dt = Math.max(1, now - drag.t) / 1000;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  const k = 3.2 / Math.min(innerWidth, innerHeight) * zoomF;
+  earth.rotation.y += dx * k;
+  tilt = clamp(tilt + dy * k * .8, -1.1, 1.1);
+  drag.vel = drag.vel * .5 + (dx * k / dt) * .5;
+  drag.x = e.clientX; drag.y = e.clientY; drag.t = now;
+});
+globeL.addEventListener('pointerup', () => {
+  if (!drag.on) return;
+  drag.on = false; globeL.classList.remove('dragging');
+  if (drag.moved < 6) { if (!busy) scene === 'globe' ? toMoon() : moonToDot(); return; }
+  spin = performance.now() - drag.t > 120 ? BASE_SPIN : clamp(drag.vel, -16, 16);
+});
+globeL.addEventListener('pointercancel', () => { drag.on = false; globeL.classList.remove('dragging'); });
+globeL.addEventListener('wheel', e => {
+  if (scene !== 'globe' || busy) return;
+  e.preventDefault();
+  zoomF = clamp(zoomF * Math.exp(e.deltaY * .0012), .55, 1.7); cam.pos.z = zBase() * zoomF;
+}, { passive: false });
+
+/* ---------- 1 → 2 · pinhole into the galaxy, open straight into "you" ---------- */
+async function galaxyToRoom() {
+  if (scene !== 'deep' || busy) return;
+  busy = true; scene = 'entering';
+  deep.classList.add('hold');
+  const G = galaxyPt();
+  const R0 = Math.hypot(Math.max(G.x, innerWidth - G.x), Math.max(G.y, innerHeight - G.y)) + 4;
+  await tween(2600, k => {
+    deep.style.clipPath = `circle(${(R0 * (1 - k)).toFixed(2)}px at ${G.x}px ${G.y}px)`;
+  }, E.inOut);
+  deep.classList.add('instant'); deep.classList.remove('on', 'hold');
+  deep.style.clipPath = ''; deepPlate.style.setProperty('--ds', 1);
+  await sleep(250);
+  // open: a sharp circle grows out of the same point, onto the wall
+  wallReset();
+  wall.style.clipPath = `circle(0px at ${G.x}px ${G.y}px)`;
+  wall.classList.add('on');
+  const intro = wallIntro();
+  await tween(1300, k => { wall.style.clipPath = `circle(${(R0 * k).toFixed(2)}px at ${G.x}px ${G.y}px)`; }, E.inOut);
+  wall.style.clipPath = '';
+  scene = 'wall';
+  await intro;
+  busy = false;
+}
+
+/* ---------- the wall ---------- */
+const wall = $('#s-wall'), wEarth = $('#wall-earth'), wWords = $('#wall-words');
+const DEG = Math.PI / 180;
+
+// a three.js layer over the wall: real pushpin models, and paper that bends like cloth once it is falling
+const WG = { r: null, sc: null, cam: null, D: 1400, W: 1, H: 1 };
+function initWallGL() {
+  if (WG.r || !window.THREE) return;
+  const c = document.createElement('canvas'); c.id = 'wall-gl'; wall.append(c);
+  WG.r = new THREE.WebGLRenderer({ canvas: c, alpha: true, antialias: true });
+  WG.r.setPixelRatio(Math.min(devicePixelRatio, 2)); WG.r.outputEncoding = THREE.sRGBEncoding; WG.r.setClearColor(0x000000, 0);
+  WG.sc = new THREE.Scene(); WG.cam = new THREE.PerspectiveCamera(30, 1, 1, 8000); WG.cam.position.set(0, 0, WG.D);
+  WG.r.autoClear = false;
+  // paper: mostly soft, even room light with only a gentle key, so tilting a card changes its brightness by ~10% at most
+  // (a strong overhead key made a card leaning back 45° drop to ~60% of the pinned card's brightness)
+  const paperLights = sc => {
+    sc.add(new THREE.HemisphereLight(0xffffff, 0xf6eadc, .8));
+    const key = new THREE.DirectionalLight(0xffffff, .2); key.position.set(-.3, .4, 1); sc.add(key);
+    const fill = new THREE.DirectionalLight(0xfff0dc, .03); fill.position.set(.7, -.4, .6); sc.add(fill);
+  };
+  paperLights(WG.sc);
+  // falling paper gets its own pass, drawn over the wall, the pinned cards and their pins, stacked in the order it came loose
+  WG.fallSc = new THREE.Scene(); paperLights(WG.fallSc); WG.seq = 0;
+  // paper fibre: a soft height field turned into a normal map, plus a matching grain for the paper earth
+  WG.paperNormal = paperNormalMap();
+  // pins: their own pass with a stronger key, so they still read as glossy 3D objects
+  WG.pinSc = new THREE.Scene();
+  WG.pinSc.add(new THREE.HemisphereLight(0xffffff, 0xf2e2cf, .45));
+  const pkey = new THREE.DirectionalLight(0xffffff, .75); pkey.position.set(-.6, .8, 1); WG.pinSc.add(pkey);
+  const pfill = new THREE.DirectionalLight(0xfff0dc, .15); pfill.position.set(.7, -.4, .6); WG.pinSc.add(pfill);
+  // soft shadows the falling paper casts back onto the wall (a card and a disc)
+  const soft = round => { const c = document.createElement('canvas'); c.width = 256; c.height = 300; const g = c.getContext('2d');
+    g.filter = 'blur(16px)'; g.fillStyle = 'rgba(60, 40, 20, 1)'; g.beginPath();
+    if (round) g.ellipse(128, 150, 96, 96, 0, 0, 6.2832); else g.rect(32, 36, 192, 228);
+    g.fill(); return new THREE.CanvasTexture(c); };
+  WG.cardShadow = soft(false); WG.discShadow = soft(true);
+  // one pushpin, built up the y axis from the needle tip (y = 0) to the top of the head
+  // the classic pushpin: a moulded plastic cylinder pinched at the waist, a wide base and a flared, domed cap
+  const red = new THREE.MeshPhysicalMaterial({ color: 0xb3180f, roughness: .32, clearcoat: .7, clearcoatRoughness: .2 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0xdadcde, metalness: .7, roughness: .28 });
+  const profile = [[0, 5.6], [5.0, 5.6], [5.35, 6.1], [5.2, 6.9], [3.6, 8.3], [2.55, 9.9], [2.4, 11.4], [2.8, 12.8], [3.9, 14.2],
+                   [4.6, 15.4], [4.6, 16.4], [3.9, 17.1], [2.2, 17.45], [0, 17.55]].map(([x, y]) => new THREE.Vector2(x, y));
+  WG.parts = [
+    [new THREE.CylinderGeometry(.55, .12, 7, 12), steel, 3.5],      // needle (tip at 0)
+    [new THREE.LatheGeometry(profile, 48), red, 0],                 // the body
+  ];
+  const sc = document.createElement('canvas'); sc.width = sc.height = 64; const g = sc.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(45, 22, 10, .5)'); gr.addColorStop(1, 'rgba(45, 22, 10, 0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64); WG.shadow = new THREE.CanvasTexture(sc);
+}
+function sizeWallGL() {
+  if (!WG.r) return;
+  WG.W = innerWidth; WG.H = innerHeight; WG.r.setSize(WG.W, WG.H, false);
+  WG.cam.aspect = WG.W / WG.H; WG.cam.fov = 2 * Math.atan(WG.H / 2 / WG.D) / DEG; WG.cam.updateProjectionMatrix();   // 1 unit = 1 css px on the wall
+}
+const gx = x => x - WG.W / 2, gy = y => WG.H / 2 - y;
+const HEAD_UP = 9;    // how far above the needle's entry point the pin's body sits on screen
+function makePin(label) {
+  const b = document.createElement('button'); b.className = 'pin'; b.setAttribute('aria-label', label); wall.append(b);
+  const pivot = new THREE.Group(), model = new THREE.Group();
+  for (const [geo, mat, y] of WG.parts) { const m = new THREE.Mesh(geo, mat); m.position.y = y; model.add(m); }
+  model.rotation.x = 62 * DEG;                       // stuck in at an angle: head leaning out toward us and up
+  model.scale.setScalar(1.35);
+  const sh = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.MeshBasicMaterial({ map: WG.shadow, transparent: true, depthWrite: false }));
+  sh.position.set(9, 6, -.5); sh.scale.setScalar(1.3);
+  pivot.add(model); pivot.add(sh); pivot.visible = false; WG.pinSc.add(pivot);
+  return { el: b, pivot, sh, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, w: 0, axis: new THREE.Vector3(), push: 0, state: 'in', lean: (Math.random() - .5) * 30 };
+}
+function makeBody(el, slow) { return { el, slow, state: 'pinned', x: 0, y: 0, w: 0, h: 0, size: 0, rz: 0, rx: 0, ry: 0, trz: 0, trx: 0, try_: 0, t: 0, vx: 0, vy: 0, mesh: null }; }
+initWallGL(); sizeWallGL();
+const pols = [...document.querySelectorAll('.polaroid')].map((el, i) => Object.assign(makeBody(el, false), { i, pin: makePin('unpin ' + el.querySelector('img').alt) }));
+const EO = Object.assign(makeBody(wEarth, true), { pin: makePin('take out the pin holding the earth') });
+let wallOn = false, wLast = 0;
+function pinPoint(b, fy) {
+  const a = b.rz * DEG, dy = -b.h / 2 + fy * b.h;
+  return [b.x - Math.sin(a) * dy, b.y + Math.cos(a) * dy];
+}
+function seatPin(b, fy) {
+  const pn = b.pin; [pn.x, pn.y] = pinPoint(b, fy);
+  pn.el.style.transform = `translate(${pn.x.toFixed(1)}px, ${(pn.y - HEAD_UP).toFixed(1)}px)`;
+  if (pn.state === 'in') { pn.pivot.position.set(gx(pn.x), gy(pn.y), 0); pn.pivot.quaternion.identity(); pn.pivot.rotation.z = pn.lean * DEG; }
+}
+function wallLayout() {
+  sizeWallGL();
+  const W = innerWidth, H = innerHeight, wide = W >= 760 || W > H * 1.15;
+  const d = wide ? Math.min(H * .56, W * .38) : Math.min(W * .62, H * .34);
+  if (EO.state === 'pinned') {
+    Object.assign(EO, { w: d, h: d * 1.009, size: d, x: wide ? W * .69 : W * .5, y: wide ? H * .44 : H * .25, rz: -3, rx: 0, ry: 0 });
+    wEarth.style.width = d + 'px'; drawBody(EO); seatPin(EO, .06);
+  }
+  const s = wide ? Math.min(H * .23, W * .15) : Math.min(W * .3, H * .16);
+  const spots = wide ? [[.11, .2, -7], [.29, .15, 5], [.09, .55, 4], [.3, .5, -5], [.19, .83, 3]]
+                     : [[.2, .55, -6], [.52, .53, 5], [.82, .57, -3], [.33, .76, 4], [.68, .78, -5]];
+  pols.forEach((p, i) => {
+    // instant-film proportions: thin border on three sides, a deep one at the bottom (padding in px; % would follow the wall's width)
+    p.w = s; p.h = s * 1.18; p.size = p.h; p.el.style.width = s + 'px'; p.el.style.padding = `${s * .06}px ${s * .06}px ${s * .24}px`;
+    if (p.state === 'pinned') { Object.assign(p, { x: spots[i][0] * W, y: spots[i][1] * H, rz: spots[i][2], rx: 0, ry: 0 }); drawBody(p); seatPin(p, .035); }
+  });
+  for (const b of [...pols, EO]) if (b.mesh && b.state === 'pinned' && Math.abs(b.mesh.w0 - b.w) > .5) {   // resized: rebuild at the new size
+    const f = b.mesh.fade, ft = b.mesh.fadeT; dropMesh(b); makeCard(b); b.mesh.fade = f; b.mesh.fadeT = ft;
+  }
+}
+function drawBody(b) {   // the DOM card: shown while pinned, an invisible grab target once the 3D card takes over
+  b.el.style.transform = `translate(${(b.x - b.w / 2).toFixed(1)}px, ${(b.y - b.h / 2).toFixed(1)}px) rotate(${b.rz.toFixed(2)}deg)`;
+}
+function dropMesh(b) {
+  if (!b.mesh) return;
+  if (b.mesh.g.parent) b.mesh.g.parent.remove(b.mesh.g); WG.sc.remove(b.mesh.shadow); b.mesh.shadow.geometry.dispose(); b.mesh.geo.dispose(); b.mesh.mats.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); }); b.mesh = null;
+}
+function wallReset() {
+  for (const b of [...pols, EO]) {
+    dropMesh(b); b.state = 'pinned'; b.el.classList.remove('on', 'free', 'held', 'ghost');
+    const pn = b.pin; pn.state = 'in'; pn.push = 0; pn.pivot.visible = false; pn.sh.visible = true; pn.el.classList.remove('out');
+  }
+  wWords.className = ''; wWords.style.cssText = '';
+  wall.classList.remove('fading');
+  wallLayout();
+}
+async function wallIntro() {
+  // every photo and the earth exist as 3D paper from the start (faded out), so nothing ever switches renderer
+  await Promise.all([...wall.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
+  for (const b of [...pols, EO]) if (!b.mesh) makeCard(b);
+  wallOn = true; wLast = performance.now(); requestAnimationFrame(wallLoop);
+  await sleep(500);
+  EO.mesh.fadeT = 1; EO.pin.pivot.visible = true;
+  await sleep(900);
+  for (const p of pols) { p.mesh.fadeT = 1; p.pin.pivot.visible = true; await sleep(420); }
+  await sleep(500);
+  wWords.classList.add('on');
+}
+
+// paper as cloth: a finely divided plane whose surface curls with each swing and ripples from the top edge down
+function paperNormalMap() {   // soft long fibres plus fine tooth, as a tangent-space normal map
+  const N = 512, h = new Float32Array(N * N);
+  for (let i = 0; i < 1400; i++) {        // fibres: short, slightly curved, mostly one direction
+    let x = Math.random() * N, y = Math.random() * N, a = (Math.random() - .5) * .9 + .3, L = 10 + Math.random() * 40, amp = .35 + Math.random() * .65;
+    for (let k = 0; k < L; k++) { const ix = ((x | 0) % N + N) % N, iy = ((y | 0) % N + N) % N; h[iy * N + ix] += amp; x += Math.cos(a); y += Math.sin(a); a += (Math.random() - .5) * .15; }
+  }
+  for (let i = 0; i < N * N; i++) h[i] += (Math.random() - .5) * .9;   // tooth
+  const blur = src => { const o = new Float32Array(N * N); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    let s = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) s += src[((y + dy + N) % N) * N + (x + dx + N) % N]; o[y * N + x] = s / 9; } return o; };
+  const H = blur(blur(h)), c = document.createElement('canvas'); c.width = c.height = N;
+  const g = c.getContext('2d'), d = g.createImageData(N, N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = H[y * N + (x + 1) % N] - H[y * N + (x - 1 + N) % N], dy = H[((y + 1) % N) * N + x] - H[((y - 1 + N) % N) * N + x];
+    const nx = -dx * 1.4, ny = dy * 1.4, l = Math.hypot(nx, ny, 1), i = (y * N + x) * 4;
+    d.data[i] = (nx / l * .5 + .5) * 255; d.data[i + 1] = (ny / l * .5 + .5) * 255; d.data[i + 2] = (1 / l * .5 + .5) * 255; d.data[i + 3] = 255;
+  }
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+function cardTexture(b) {
+  const img = b.el.querySelector('img');
+  if (b.slow) {   // the paper earth: the drawing plus a faint paper grain, only where there is paper
+    const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'source-atop'; g.globalAlpha = .07;
+    for (let i = 0; i < 9000; i++) { g.fillStyle = Math.random() < .5 ? '#5a4a3a' : '#ffffff'; g.fillRect(Math.random() * c.width, Math.random() * c.height, 1 + Math.random() * 2.5, 1); }
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t;
+  }
+  const S = 512, c = document.createElement('canvas'); c.width = S; c.height = Math.round(S * 1.18);
+  const g = c.getContext('2d'); g.fillStyle = '#fbfaf6'; g.fillRect(0, 0, c.width, c.height);
+  const pad = S * .06; g.filter = 'saturate(.92) contrast(.97)'; g.drawImage(img, pad, pad, S - 2 * pad, S - 2 * pad);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t;
+}
+function makeCard(b) {
+  const geo = new THREE.PlaneGeometry(b.w, b.h, 16, 20), mats = [];
+  const g = new THREE.Group(); g.rotation.order = 'ZXY';
+  // no depth testing between pieces of paper: they never cut into each other or into what's on the wall; draw order decides instead
+  const front = new THREE.MeshStandardMaterial({ map: cardTexture(b), roughness: 1, metalness: 0, side: b.slow ? THREE.DoubleSide : THREE.FrontSide,
+    transparent: true, opacity: 0, alphaTest: b.slow ? .4 : 0, depthTest: false, depthWrite: false,
+    normalMap: b.slow ? WG.paperNormal : null, normalScale: new THREE.Vector2(1.6, 1.6) });
+  if (b.slow) { front.normalMap.repeat.set(2.2, 2.2); }
+  mats.push(front); g.add(new THREE.Mesh(geo, front));
+  if (!b.slow) {
+    const back = new THREE.MeshStandardMaterial({ color: 0xeeebe4, roughness: 1, metalness: 0, side: THREE.BackSide, transparent: true, opacity: 0, depthTest: false, depthWrite: false });
+    mats.push(back); g.add(new THREE.Mesh(geo, back));
+    // the print's gleam: a highlight on the photo, strongest where the surface catches the light as it tilts;
+    // it adds light only: it must never write opacity into the canvas, or a card still fading in shows up as a black patch
+    const gleam = new THREE.ShaderMaterial({ transparent: true, depthTest: false, depthWrite: false, blending: THREE.CustomBlending,
+      blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+      uniforms: { L: { value: new THREE.Vector3(-.45, .62, .64).normalize() }, op: { value: 0 } },
+      vertexShader: `varying vec3 vN; varying vec3 vW; varying vec2 vUv;
+        void main() { vUv = uv; vN = normalize(mat3(modelMatrix) * normal); vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: `uniform vec3 L; uniform float op; varying vec3 vN; varying vec3 vW; varying vec2 vUv;
+        void main() {
+          vec3 N = normalize(vN), V = normalize(cameraPosition - vW), R = reflect(-L, N);
+          float s = max(dot(R, V), 0.0);
+          float photo = step(.06, vUv.x) * step(vUv.x, .94) * step(.203, vUv.y) * step(vUv.y, .949);
+          float g = (pow(s, 36.0) * .55 + pow(s, 7.0) * .07) * mix(.25, 1.0, photo);
+          gl_FragColor = vec4(vec3(1.0, .99, .96) * g * op, 0.0);
+        }` });
+    mats.push(gleam); const gm = new THREE.Mesh(geo, gleam); gm.renderOrder = 1; g.add(gm);
+  }
+  WG.sc.add(g);
+  // its shadow on the wall, which stretches, softens and fades as the paper comes away
+  const shMat = new THREE.MeshBasicMaterial({ map: b.slow ? WG.discShadow : WG.cardShadow, transparent: true, depthWrite: false, opacity: 0 });
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(b.w * 1.33, b.h * 1.32), shMat); shadow.renderOrder = -1; WG.sc.add(shadow); mats.push(shMat);
+  b.mesh = { g, geo, mats, shadow, base: geo.attributes.position.array.slice(), tau: Math.random() * 10, curl: 0, flut: 0, px: b.x, py: b.y, lift: 1.5, age: 0,
+    fade: 0, fadeT: 0, w0: b.w, order: 0 };
+  setOrder(b, 0);
+}
+function setOrder(b, o) { const M = b.mesh; M.order = o; M.g.children.forEach((m, i) => { m.renderOrder = o + i * .01; }); }
+function stepCard(b, dt) {
+  const M = b.mesh; if (!M) return;
+  const vx = (b.x - M.px) / Math.max(dt, 1e-3), vy = (b.y - M.py) / Math.max(dt, 1e-3); M.px = b.x; M.py = b.y;
+  const speed = Math.hypot(vx, vy), stiff = b.slow ? .45 : 1, a = Math.min(1, dt * 4);
+  M.tau += dt * (3.5 + speed * .025);
+  M.curl += (clamp(vx / 240, -1, 1) * .45 * stiff - M.curl) * a;                                  // bows away from the direction of travel
+  M.flut += ((b.state === 'held' ? .3 : clamp(speed / 100, 0, 1)) * stiff - M.flut) * Math.min(1, dt * 2.5);
+  const P = M.geo.attributes.position.array, Bp = M.base, W = b.w, H = b.h;
+  for (let i = 0; i < P.length; i += 3) {
+    const u = Bp[i] / W, v = Bp[i + 1] / H, trail = .5 - v;          // u, v in −.5….5; trail is 0 at the top edge, 1 at the bottom
+    P[i + 2] = M.curl * (u * u - 1 / 12) * W
+             + M.flut * (Math.sin(5.4 * trail + 2.6 * u - M.tau * 1.9) * (.25 + trail) * W * .05
+                       + Math.sin(M.tau * .95 + u * 1.5) * trail * trail * H * .09);
+  }
+  M.geo.attributes.position.needsUpdate = true; M.geo.computeVertexNormals();
+  // pinned it lies flat on the wall; once free it leaves the wall gradually, further when held
+  if (b.state !== 'pinned') M.age += dt;
+  const liftT = b.state === 'pinned' ? 1.5 : b.state === 'held' ? 90 : 14 + 56 * Math.min(1, M.age / 1.4);
+  M.lift += (liftT - M.lift) * Math.min(1, dt * 3);
+  M.fade += (M.fadeT - M.fade) * Math.min(1, dt * 2.2);
+  M.mats.forEach(m => { if (m === M.shadow.material) return; if (m.uniforms) m.uniforms.op.value = M.fade; else m.opacity = M.fade; });
+  // never let a tilted or bent edge dip behind the wall: lift at least as far as the card reaches back
+  const reach = (b.h / 2) * Math.abs(Math.sin(b.rx * DEG)) + (b.w / 2) * Math.abs(Math.sin(b.ry * DEG)) + Math.abs(M.curl) * b.w * .2 + M.flut * b.h * .12 + 4;
+  if (b.state !== 'pinned') M.lift = Math.max(M.lift, reach);
+  M.g.position.set(gx(b.x), gy(b.y), M.lift);
+  const shrink = 1 + M.lift / 260;
+  M.shadow.position.set(gx(b.x + 3 + M.lift * .12), gy(b.y + 7 + M.lift * .2), .2);
+  M.shadow.rotation.z = -b.rz * DEG; M.shadow.scale.set(shrink * Math.cos(b.ry * DEG) ** .5, shrink * Math.cos(b.rx * DEG) ** .5, 1);
+  M.shadow.material.opacity = .24 * Math.exp(-M.lift / 160) * (b.slow ? .9 : 1) * M.fade;
+  M.g.rotation.set(-b.rx * DEG, b.ry * DEG, -b.rz * DEG);
+}
+
+// the path, after the sketch: drop almost straight down and hook up to one side (the J),
+// then rock side to side in smile-shaped arcs, high at each end and low in the middle (the C), sinking until it leaves the frame
+function startFall(b, dir) {
+  if (!b.mesh) makeCard(b);
+  // into the falling layer, on top of everything that came loose before it
+  if (b.mesh.g.parent !== WG.fallSc) { WG.sc.remove(b.mesh.g); WG.fallSc.add(b.mesh.g); }
+  setOrder(b, 10 + (++WG.seq));
+  b.state = 'J'; b.t = 0; b.dir = dir || (Math.random() < .5 ? -1 : 1);
+  const Jh = b.size * .9 + 70, Jw = b.size * .7 + 50;
+  b.P = [[b.x, b.y], [b.x, b.y + Jh], [b.x + b.dir * Jw * .45, b.y + Jh * 1.1], [b.x + b.dir * Jw, b.y + Jh * .82]];
+  b.Jdur = b.slow ? 1.8 : 1.3;
+  b.A = Jw * .95; b.B = b.A * .32; b.om = b.slow ? 1.25 : 1.7; b.sink = b.slow ? 110 : 60;   // deep enough arcs that each swing reads as a C
+  b.rz0 = b.rz;
+}
+function bez(P, e) {
+  const u = 1 - e;
+  return [0, 1].map(k => u * u * u * P[0][k] + 3 * u * u * e * P[1][k] + 3 * u * e * e * P[2][k] + e * e * e * P[3][k]);
+}
+function stepBody(b, dt) {
+  if (b.state === 'J') {
+    b.t += dt;
+    const u = Math.min(1, b.t / b.Jdur), e = E.inOut(u);
+    [b.x, b.y] = bez(b.P, e);
+    b.trz = lerp(b.rz0, b.dir * 24, e); b.trx = 42 * e; b.try_ = b.dir * 26 * e;
+    if (u >= 1) { b.state = 'C'; b.t = 0; b.cx = b.P[3][0] - b.dir * b.A; b.yb = b.P[3][1] + b.B; b.th0 = b.dir * Math.PI / 2; }
+  } else if (b.state === 'C') {
+    b.t += dt;
+    const th = b.th0 + b.om * b.t, vx = b.A * b.om * Math.cos(th);
+    b.x = b.cx + b.A * Math.sin(th);
+    b.y = b.yb + b.sink * b.t + b.B * Math.cos(2 * th);
+    b.trz = clamp(vx * .07, -30, 30); b.trx = 22 + 26 * Math.abs(Math.cos(th)); b.try_ = 24 * Math.sin(th);
+    if (b.y - b.size * .8 > innerHeight + 40) { b.state = 'gone'; dropMesh(b); }
+  } else if (b.state === 'held') {
+    const tx = grab.x - grab.ox, ty = grab.y - grab.oy;
+    b.vx = (tx - b.x) / Math.max(dt, .001); b.vy = (ty - b.y) / Math.max(dt, .001);
+    b.x += (tx - b.x) * Math.min(1, dt * 18); b.y += (ty - b.y) * Math.min(1, dt * 18);
+    b.trz = clamp(b.vx * .02, -25, 25); b.trx = 12; b.try_ = clamp(b.vx * .015, -20, 20);
+  } else { if (b.state === 'pinned') stepCard(b, dt); return; }
+  // rotations ease toward their targets, so the hand-offs between J, C and a grab never snap
+  const a = Math.min(1, dt * 6);
+  b.rz += (b.trz - b.rz) * a; b.rx += (b.trx - b.rx) * a; b.ry += (b.try_ - b.ry) * a;
+  drawBody(b); stepCard(b, dt);
+}
+function knockPin(pn) {   // the pin pops out toward us and tumbles away out of frame
+  pn.state = 'out'; pn.el.classList.add('out'); pn.sh.visible = false;
+  pn.el.blur();   // a knocked-out pin shouldn't keep the keyboard focus
+  pn.vx = (Math.random() - .5) * 50; pn.vy = 20; pn.vz = 0; pn.z = 0;   // it just drops
+  pn.axis.set(Math.random() - .5, Math.random() - .5, Math.random() - .5).normalize(); pn.w = 3 + Math.random() * 3;
+}
+function stepPin(pn, dt) {
+  if (pn.state === 'in') {   // pushed in when it first appears
+    if (pn.pivot.visible && pn.push < 1) { pn.push = Math.min(1, pn.push + dt * 3.2); pn.pivot.position.z = (1 - E.out3(pn.push)) * 60; }
+    return;
+  }
+  if (pn.state !== 'out') return;
+  pn.vy += 1900 * dt; pn.x += pn.vx * dt; pn.y += pn.vy * dt;
+  pn.pivot.position.set(gx(pn.x), gy(pn.y), pn.z); pn.pivot.rotateOnWorldAxis(pn.axis, pn.w * dt);
+  if (pn.y > innerHeight + 80) { pn.state = 'gone'; pn.pivot.visible = false; }
+}
+function wallLoop(now) {
+  if (!wallOn) return;
+  const dt = Math.min(.04, (now - wLast) / 1000); wLast = now;
+  for (const b of [...pols, EO]) { stepBody(b, dt); stepPin(b.pin, dt); }
+  if (WG.r) { WG.r.clear(); WG.r.render(WG.sc, WG.cam); WG.r.render(WG.pinSc, WG.cam); WG.r.render(WG.fallSc, WG.cam); }
+  requestAnimationFrame(wallLoop);
+}
+const grab = { b: null, x: 0, y: 0, ox: 0, oy: 0 };
+pols.forEach(p => {
+  p.pin.el.addEventListener('click', e => {
+    e.stopPropagation();
+    if (scene !== 'wall' || p.state !== 'pinned') return;
+    knockPin(p.pin); p.el.classList.add('free'); startFall(p);
+  });
+  p.el.addEventListener('pointerdown', e => {
+    if (scene !== 'wall' || p.state === 'pinned' || p.state === 'gone') return;
+    e.preventDefault(); p.el.setPointerCapture(e.pointerId);
+    Object.assign(grab, { b: p, x: e.clientX, y: e.clientY, ox: e.clientX - p.x, oy: e.clientY - p.y });
+    p.state = 'held'; p.el.classList.add('held'); setOrder(p, 10 + (++WG.seq));
+  });
+  p.el.addEventListener('pointermove', e => { if (grab.b === p) { grab.x = e.clientX; grab.y = e.clientY; } });
+  const drop = () => {   // let go: it only falls again, starting a fresh J from where it is
+    if (grab.b !== p) return;
+    grab.b = null; p.el.classList.remove('held');
+    startFall(p, Math.sign(p.vx) || 0);
+  };
+  p.el.addEventListener('pointerup', drop); p.el.addEventListener('pointercancel', drop);
+});
+
+/* ---------- 2 → 3 · take out the earth's pin: it falls away, and the room is underneath ---------- */
+async function wallToRoom() {
+  if (scene !== 'wall' || busy) return;
+  busy = true; scene = 'entering';
+  knockPin(EO.pin); startFall(EO);
+  room.classList.add('on');                        // waiting underneath, the same paper
+  // every photo still pinned comes down with it: the lowest first, then each one up the wall 0.1–0.3 s later
+  const still = pols.filter(p => p.state === 'pinned').sort((a, b) => b.y - a.y);
+  (async () => { for (const p of still) { await sleep(100 + Math.random() * 200); knockPin(p.pin); startFall(p); } })();
+  await sleep(1000);
+  // the words fade and the wall's paper turns clear
+  wWords.style.opacity = getComputedStyle(wWords).opacity; wWords.style.animation = 'none';
+  requestAnimationFrame(() => { wWords.style.transition = 'opacity .8s ease'; wWords.style.opacity = '0'; });
+  wall.classList.add('fading');
+  await sleep(900);
+  scene = 'room';
+  const intro = roomIntro();
+  for (let i = 0; i < 150 && [EO, ...pols].some(b => b.state !== 'gone' && b.state !== 'pinned'); i++) await sleep(100);   // let everything fall out of frame
+  wall.classList.remove('on'); wallOn = false;
+  for (const b of [...pols, EO]) dropMesh(b);
+  await intro;
+  busy = false;
+}
+EO.pin.el.addEventListener('click', e => { e.stopPropagation(); wallToRoom(); });
+
+/* ---------- 2 → 3 · out of "you" to the globe (also used after clicking back in) ---------- */
+function setRect(el, x, y, w, h) { Object.assign(el.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' }); }
+async function roomToGlobe() {
+  if (scene !== 'room' || busy) return;
+  busy = true; room.classList.remove('ready');
+  await roomOutro();
+  await earthReady;
+  portal.style.transition = 'none'; portal.style.borderWidth = '0px';
+  setRect(portal, 0, 0, innerWidth, innerHeight); portal.style.display = 'block';
+  room.classList.remove('on');
+  frozen = true;
+  if (!globeL.classList.contains('on')) {          // arriving fresh from the galaxy
+    resetSpace(); resetNotes();
+    resetGlobeAngle(); zoomF = 1; moon.visible = false; globeView(zBase());
+    globeL.classList.add('instant', 'on');
+  }
+  startGlobe(); frame(0);
+  const M = { x: markPt.x, y: markPt.y };
+  globeL.style.transition = 'none'; globeL.style.transformOrigin = `${M.x}px ${M.y}px`;
+  // driven frame by frame (not CSS transitions + a timer): the page shrinks into the "you" square
+  // while the globe settles from 9× to 1×, and both land on exactly the same frame
+  await tween(1400, k => {
+    setRect(portal, lerp(0, M.x - 13, k), lerp(0, M.y - 13, k), lerp(innerWidth, 26, k), lerp(innerHeight, 26, k));
+    portal.style.borderWidth = (1.6 * k).toFixed(2) + 'px';
+    globeL.style.transform = `scale(${lerp(9, 1, k).toFixed(4)})`; globeL.style.opacity = String(Math.min(1, k * 1.4));
+  }, E.inOut);
+  // the CRT square (scanlines, glow, fringing, label) eases in over the plain white one rather than snapping in on one frame
+  globeL.style.transform = globeL.style.opacity = '';
+  markFade = 0; globeMark.classList.add('show'); updateGlobeMark();
+  await tween(650, k => { markFade = k; portal.style.opacity = String(1 - k); }, E.inOut);
+  markFade = 1; portal.style.display = 'none'; portal.style.opacity = '';
+  globeL.classList.remove('instant');
+  spin = 0; frozen = false; scene = 'globe';   // the spin eases back up from rest instead of starting at full speed
+  await sleep(500);
+  vhs.classList.add('show');
+  busy = false;
+}
+$('#leave').addEventListener('click', roomToGlobe);
+
+/* clicking "you" on the globe goes back in */
+async function globeToRoom() {
+  if (scene !== 'globe' || busy || markPt.facing < .2) return;
+  busy = true; frozen = true; scene = 'entering';
+  vhs.classList.remove('show');
+  const b = globeMark.querySelector('svg').getBoundingClientRect();
+  portal.style.transition = 'none'; portal.style.borderWidth = '1.6px';
+  setRect(portal, b.left, b.top, b.width, b.height); portal.style.opacity = '0'; portal.style.display = 'block';
+  await tween(350, k => { markFade = 1 - k; portal.style.opacity = String(k); }, E.inOut);
+  globeMark.classList.remove('show'); markFade = 1; portal.style.opacity = '';
+  globeL.style.transition = 'none'; globeL.style.transformOrigin = `${markPt.x}px ${markPt.y}px`;
+  await tween(1300, k => {
+    setRect(portal, lerp(b.left, 0, k), lerp(b.top, 0, k), lerp(b.width, innerWidth, k), lerp(b.height, innerHeight, k));
+    portal.style.borderWidth = (1.6 * (1 - k)).toFixed(2) + 'px';
+    globeL.style.transform = `scale(${lerp(1, 9, k).toFixed(4)})`; globeL.style.opacity = String(1 - k);
+  }, E.inOut);
+  globeOn = false;
+  room.classList.add('on'); portal.style.display = 'none';
+  scene = 'room';
+  await roomIntro();
+  busy = false;
+}
+globeMark.addEventListener('click', globeToRoom);
+
+/* ---------- the room: halftone dot field + a 1px line that never stops wandering ---------- */
+const rc = $('#room-c'), ctx = rc.getContext('2d');
+const dotsC = document.createElement('canvas'), dctx = dotsC.getContext('2d');
+let RW = 0, RH = 0, DPR = 1, H = { cx: 0, cy: 0, R: 0, g: 7 }, roomOn = false;
+let dotsP = 0, dotsDrawn = -1, tangleScale = 1, tangleReveal = 0, tangleAlpha = 1, burning = false;
+function layoutRoom() {
+  DPR = Math.min(devicePixelRatio, 2); RW = innerWidth; RH = innerHeight;
+  rc.width = dotsC.width = lineC.width = RW * DPR; rc.height = dotsC.height = lineC.height = RH * DPR;
+  const wide = RW >= 760 || RW > RH * 1.15;
+  H.cx = wide ? RW * .3 : RW * .5; H.cy = wide ? RH * .5 : RH * .3;
+  H.R = wide ? Math.min(RW * .27, RH * .44) : Math.min(RW * .46, RH * .27);
+  dotsDrawn = -1;
+}
+// square lattice turned 35° off the vertical. Dot size: 1.0 at the centre, 0.8 halfway out, 0 at the rim.
+// Even the largest dots keep a hairline gap, so none ever touch.
+// tuned by hand: 61 dots centre → rim, peak dot 0.99 of the spacing (never touching), 0.86 size halfway out
+const DOTS = { across: 61, peak: .99, mid: .86, radius: 1.47, angle: 35, color: '#ff7a1a' };
+function drawDots() {
+  if (dotsDrawn === dotsP) return; dotsDrawn = dotsP;
+  dctx.setTransform(DPR, 0, 0, DPR, 0, 0); dctx.clearRect(0, 0, RW, RH);
+  if (dotsP <= 0) return;
+  const R = H.R * DOTS.radius, g = Math.max(3, R / DOTS.across), { cx, cy } = H;
+  const rmax = g * DOTS.peak / 2, n = Math.ceil(R / g) + 2, FALL = Math.log(1 - DOTS.mid) / Math.log(.5);
+  const ANG = DOTS.angle * Math.PI / 180, CA = Math.cos(ANG), SA = Math.sin(ANG);
+  dctx.fillStyle = DOTS.color;
+  dctx.beginPath();
+  for (let j = -n; j <= n; j++) for (let i = -n; i <= n; i++) {
+    const lx = i * g, ly = j * g, x = cx + lx * CA - ly * SA, y = cy + lx * SA + ly * CA;
+    const d = Math.hypot(x - cx, y - cy) / R;
+    if (d >= 1) continue;
+    const reveal = clamp(dotsP * 1.6 - d * .6, 0, 1);
+    const r = rmax * (1 - Math.pow(d, FALL)) * reveal;
+    if (r < .22) continue;
+    dctx.moveTo(x + r, y); dctx.arc(x, y, r, 0, 6.2832);
+  }
+  dctx.fill();
+}
+
+// the line: a fixed-length trail behind a wandering head, softly held inside a circle
+const N = 900;
+const TR = new Float32Array(N * 2);
+const P = new Float32Array(N * 2), O = new Float32Array(N * 2);
+const head = { x: 0, y: 0, th: 0, w: 0 };
+const SEG = .0115, RC = .4;
+function stepHead() {
+  head.w += (Math.random() - .5) * .09; head.w *= .985; head.w = clamp(head.w, -.17, .17);
+  const d = Math.hypot(head.x, head.y);
+  if (d > RC * .7) {
+    let want = Math.atan2(-head.y, -head.x) - head.th; want = Math.atan2(Math.sin(want), Math.cos(want));
+    head.th += want * .06 * Math.min(2, (d / RC - .7) / .3);
+  }
+  head.th += head.w;
+  head.x += Math.cos(head.th) * SEG; head.y += Math.sin(head.th) * SEG;
+  TR.copyWithin(0, 2); TR[N * 2 - 2] = head.x; TR[N * 2 - 1] = head.y;
+}
+function seedLine() {
+  Object.assign(head, { x: 0, y: 0, th: Math.random() * 6.28, w: 0 });
+  for (let i = 0; i < N; i++) stepHead();
+  const sc = H.R * tangleScale;
+  for (let i = 0; i < N * 2; i += 2) { P[i] = O[i] = H.cx + TR[i] * sc; P[i + 1] = O[i + 1] = H.cy + TR[i + 1] * sc; }
+}
+let headAcc = 0;
+function advance(dt) {
+  headAcc += dt * 70;
+  while (headAcc >= 1) {
+    headAcc -= 1; stepHead();
+    P.copyWithin(0, 2); O.copyWithin(0, 2);
+    const sc = H.R * tangleScale;
+    P[N * 2 - 2] = O[N * 2 - 2] = H.cx + head.x * sc; P[N * 2 - 1] = O[N * 2 - 1] = H.cy + head.y * sc;
+    if (mouse.grab > 0) mouse.grab--;
+  }
+}
+const mouse = { x: -1e4, y: -1e4, in: false, grab: -1, sx: 0, sy: 0, down: false };
+function nearest(x, y) {
+  let bi = -1, bd = 1e9;
+  for (let i = N - Math.floor(N * tangleReveal); i < N; i++) { const d = (P[i * 2] - x) ** 2 + (P[i * 2 + 1] - y) ** 2; if (d < bd) { bd = d; bi = i; } }
+  return { i: bi, d: Math.sqrt(bd) };
+}
+rc.addEventListener('pointermove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.in = true;
+  if (mouse.grab < 0) rc.style.cursor = nearest(mouse.x, mouse.y).d < 12 ? 'grab' : 'default';
+});
+rc.addEventListener('pointerleave', () => { mouse.in = false; });
+rc.addEventListener('pointerdown', e => {
+  mouse.x = mouse.sx = e.clientX; mouse.y = mouse.sy = e.clientY; mouse.in = true; mouse.down = true;
+  const n = nearest(mouse.x, mouse.y);
+  if (n.d < 22) { mouse.grab = n.i; rc.setPointerCapture(e.pointerId); rc.style.cursor = 'grabbing'; }
+});
+rc.addEventListener('pointerup', e => {
+  const wasGrab = mouse.grab >= 0, moved = Math.hypot(e.clientX - mouse.sx, e.clientY - mouse.sy);
+  mouse.grab = -1; rc.style.cursor = 'default';
+  if (mouse.down && !wasGrab && moved < 6) roomToGlobe();   // a plain click on the paper zooms out
+  mouse.down = false;
+});
+rc.addEventListener('pointercancel', () => { mouse.grab = -1; mouse.down = false; rc.style.cursor = 'default'; });
+
+const LENS = { amt: .55, r: 62 }, lens = { x: -1e4, y: -1e4, k: 0 };
+function physics() {
+  const k = .085, damp = .82, sc = H.R * tangleScale;
+  // the lens eases after the cursor and fades in and out, so nothing snaps
+  const on = mouse.in && mouse.grab < 0 ? 1 : 0;
+  lens.k += (on - lens.k) * .08;
+  if (lens.x < -1e3) { lens.x = mouse.x; lens.y = mouse.y; }
+  lens.x += (mouse.x - lens.x) * .25; lens.y += (mouse.y - lens.y) * .25;
+  for (let i = 0; i < N; i++) {
+    const ix = i * 2, iy = ix + 1;
+    const rx = H.cx + TR[ix] * sc, ry = H.cy + TR[iy] * sc;
+    const vx = (P[ix] - O[ix]) * damp, vy = (P[iy] - O[iy]) * damp;
+    O[ix] = P[ix]; O[iy] = P[iy];
+    P[ix] += vx + (rx - P[ix]) * k; P[iy] += vy + (ry - P[iy]) * k;
+    if (lens.k > .001) {   // a soft fisheye: the string bulges smoothly away from the cursor instead of being cut out
+      const dx = P[ix] - lens.x, dy = P[iy] - lens.y, d2 = dx * dx + dy * dy, f = LENS.amt * lens.k * Math.exp(-d2 / (LENS.r * LENS.r));
+      P[ix] += dx * f * .16; P[iy] += dy * f * .16;
+    }
+  }
+  const L = SEG * sc;
+  for (let it = 0; it < 2; it++) {
+    if (mouse.grab >= 0) { P[mouse.grab * 2] = mouse.x; P[mouse.grab * 2 + 1] = mouse.y; }
+    for (let i = 0; i < N - 1; i++) {
+      const a = i * 2, b = a + 2;
+      const dx = P[b] - P[a], dy = P[b + 1] - P[a + 1], d = Math.hypot(dx, dy) || 1e-6;
+      const diff = (d - L) / d * .5;
+      const ga = i === mouse.grab, gb = i + 1 === mouse.grab;
+      const wa = ga ? 0 : gb ? 2 : 1, wb = gb ? 0 : ga ? 2 : 1;
+      P[a] += dx * diff * wa; P[a + 1] += dy * diff * wa;
+      P[b] -= dx * diff * wb; P[b + 1] -= dy * diff * wb;
+    }
+  }
+}
+function drawRoom() {
+  drawDots();
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, rc.width, rc.height);
+  ctx.drawImage(dotsC, 0, 0);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const from = N - Math.floor(N * tangleReveal);
+  if (N - from > 2 && tangleAlpha > 0) {
+    // the line, VHS-style: thicker ink with a red and a cyan ghost either side, then scanlines cut through it
+    const path = new Path2D(); path.moveTo(P[from * 2], P[from * 2 + 1]);
+    for (let i = from + 1; i < N - 1; i++) {
+      const mx = (P[i * 2] + P[i * 2 + 2]) / 2, my = (P[i * 2 + 1] + P[i * 2 + 3]) / 2;
+      path.quadraticCurveTo(P[i * 2], P[i * 2 + 1], mx, my);
+    }
+    lctx.setTransform(1, 0, 0, 1, 0, 0); lctx.clearRect(0, 0, lineC.width, lineC.height);
+    lctx.setTransform(DPR, 0, 0, DPR, 0, 0); lctx.lineJoin = lctx.lineCap = 'round'; lctx.lineWidth = 1.8;
+    lctx.globalCompositeOperation = 'source-over';
+    lctx.save(); lctx.translate(-1.3, 0); lctx.strokeStyle = 'rgba(255, 0, 70, .45)'; lctx.stroke(path); lctx.restore();
+    lctx.save(); lctx.translate(1.3, 0); lctx.strokeStyle = 'rgba(0, 150, 255, .45)'; lctx.stroke(path); lctx.restore();
+    lctx.strokeStyle = '#141414'; lctx.stroke(path);
+    lctx.setTransform(1, 0, 0, 1, 0, 0); lctx.globalCompositeOperation = 'destination-out';
+    lctx.fillStyle = scanPat(); lctx.fillRect(0, 0, lineC.width, lineC.height);
+    lctx.globalCompositeOperation = 'source-over';
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = tangleAlpha; ctx.filter = 'blur(0.35px)';
+    ctx.drawImage(lineC, 0, 0); ctx.filter = 'none'; ctx.globalAlpha = 1; ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    if (burning) {   // the ember at the burning end
+      const ex = P[from * 2], ey = P[from * 2 + 1], f = .8 + .2 * Math.sin(performance.now() / 45) * Math.sin(performance.now() / 97);
+      ctx.save(); ctx.shadowBlur = 7; ctx.shadowColor = 'rgba(255, 90, 20, .85)';
+      ctx.fillStyle = `rgba(255, ${Math.round(70 + 60 * f)}, 30, ${f})`;
+      ctx.beginPath(); ctx.arc(ex, ey, 1.7 * f + .4, 0, 6.2832); ctx.fill(); ctx.restore();
+    }
+  }
+}
+const lineC = document.createElement('canvas'), lctx = lineC.getContext('2d');
+let scanP = null, scanFor = 0;
+function scanPat() {   // 1 device px of every 3 knocked back, like the CRT words
+  if (scanP && scanFor === DPR) return scanP;
+  const c = document.createElement('canvas'); c.width = 1; c.height = Math.max(3, Math.round(3 * DPR / 1.5));
+  const g = c.getContext('2d'); g.fillStyle = 'rgba(0,0,0,.42)'; g.fillRect(0, c.height - Math.max(1, Math.round(DPR / 1.5)), 1, Math.max(1, Math.round(DPR / 1.5)));
+  scanP = ctx.createPattern(c, 'repeat'); scanFor = DPR; return scanP;
+}
+let rLast = 0;
+function roomLoop(now) {
+  if (!roomOn) return;
+  const dt = Math.min(.05, (now - rLast) / 1000); rLast = now;
+  advance(dt); physics(); drawRoom();
+  requestAnimationFrame(roomLoop);
+}
+
+// words: split into letters; hovering a letter grows it and sends its word into heavy VHS glitching
+const lines = [...document.querySelectorAll('#worries li')];
+lines.forEach(li => {
+  const span = li.querySelector('.crt'), text = span.textContent; span.textContent = '';
+  [...text].forEach((ch, i) => {
+    if (ch === ' ') { span.append(' '); return; }
+    const s = document.createElement('span'); s.className = 'ch'; s.style.setProperty('--i', i); s.textContent = ch; span.append(s);
+  });
+  li.addEventListener('pointerenter', () => li.classList.add('glitch'));
+  li.addEventListener('pointerleave', () => li.classList.remove('glitch'));
+});
+
+async function roomIntro() {
+  layoutRoom();
+  dotsP = 0; tangleScale = 1; tangleReveal = 0; tangleAlpha = 1; seedLine();
+  lines.forEach(l => { l.classList.remove('on', 'off', 'glitch'); });
+  roomOn = true; rLast = performance.now(); requestAnimationFrame(roomLoop);
+  // one thing at a time, unhurried: the dots, then the line, then each word
+  await tween(2000, k => { dotsP = k; }, E.out3);
+  await sleep(700);
+  await tween(2200, k => { tangleReveal = k; }, E.inOut);
+  await sleep(900);
+  for (const l of lines) { l.classList.add('on'); await sleep(l === lines[0] ? 1500 : 1200); }
+  room.classList.add('ready');
+}
+async function roomOutro() {
+  for (const l of [...lines].reverse()) { l.classList.remove('on', 'glitch'); l.classList.add('off'); await sleep(170); }
+  await sleep(220);
+  burning = true;   // the line burns down from its tail like a wick, still moving, until nothing is left
+  await tween(1800, k => { tangleReveal = 1 - k; }, t => t * (.6 + .4 * t));
+  burning = false;
+  await sleep(150);
+  await tween(1100, k => { dotsP = 1 - k; }, E.inOut);                                     // then the dots
+
+  roomOn = false;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, rc.width, rc.height);
+  await sleep(250);
+}
+
+/* ---------- 3 → 4 · pull back from the globe onto the moon ---------- */
+const MOON = { z: 42, h: 1.0, fov: 22, pitch: -.05 };
+async function toMoon() {
+  if (scene !== 'globe' || busy) return;
+  busy = true; scene = 'leaving'; spaceMoving = true;
+  globeMark.classList.remove('show'); vhs.classList.remove('show');
+  const z0 = cam.pos.z;
+  moon.position.set(0, -MOON.h - 12, MOON.z); moon.visible = true;
+  globeL.classList.add('moon');
+  await tween(5200, k => {
+    cam.pos.set(0, 0, lerp(z0, MOON.z, k));
+    cam.fov = lerp(35, MOON.fov, k);
+    cam.look.set(0, Math.tan(MOON.pitch) * MOON.z * k, 0);
+    moon.position.y = -MOON.h - 12 * Math.pow(1 - k, 2.2);
+  }, E.sine);
+  scene = 'moon'; spaceMoving = false;
+  updateMoonMark(); moonMark.classList.add('show');
+  await sleep(1500);
+  busy = false;
+}
+
+/* ---------- 4 → 5 · rise off the moon, swing round until it hides behind the earth, let the earth shrink to a bright point, cut to the dot ---------- */
+function resetSpace() {
+  tiltG.position.set(0, 0, 0); tiltG.scale.setScalar(1);
+  SUN.copy(SUN0); sunLight.position.copy(SUN).multiplyScalar(10);
+  EXPOSURE.value = 1; PALE.value = 0; glow.visible = false; glow.material.opacity = 0;
+}
+async function moonToDot() {
+  if (scene !== 'moon' || busy) return;
+  busy = true; scene = 'leaving'; spaceMoving = true;
+  moonMark.classList.remove('show');
+  {
+    const dist = cam.pos.distanceTo(cam.look);
+    cam.look.x += Math.tan(cam.yaw) * dist; cam.look.y += Math.tan(cam.pitch) * dist;
+    cam.tyaw = cam.tpitch = 0; cam.yaw = cam.pitch = 0;
+  }
+  layoutPBD();
+  // Invisible rescale: grow the earth about the eye and push it out along the same sight line.
+  // Nothing on screen changes, but earth and moon are now at believable relative sizes and distances.
+  const F = 600, Eye = cam.pos.clone();
+  const look0 = Eye.clone().add(cam.look.clone().sub(Eye).multiplyScalar(F));
+  tiltG.position.copy(Eye).multiplyScalar(1 - F); tiltG.scale.setScalar(F);
+  const Ce = tiltG.position.clone(), base = Eye.clone().sub(Ce).normalize();
+  const R0 = Eye.distanceTo(Ce), R1 = R0 * 45, f0 = cam.fov;
+  const Y = new THREE.Vector3(0, 1, 0), fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(), aim = new THREE.Vector3();
+  const sm = (a, b, v) => { const q = clamp((v - a) / (b - a), 0, 1); return q * q * (3 - 2 * q); };
+  glow.visible = true;
+  const M0 = moon.position.clone(), D0 = R0;           // moon centre sits 200 below its patch origin
+  const aimS = look0.clone(), cE = new THREE.Vector3(), cM = new THREE.Vector3();
+  let fovS = f0, tPrev = performance.now();
+  await tween(7000, (_, t) => {
+    const now = performance.now(), dt = Math.min(.05, (now - tPrev) / 1000); tPrev = now;
+    // the moon falls away toward the earth as we lift off it, settling into a tight orbit
+    const Dm = lerp(D0, 6000, E.inOut(clamp(t / .55, 0, 1)));
+    moon.position.copy(Ce).addScaledVector(base, Dm); moon.position.y += M0.y;
+    // swing round the earth until the moon is directly behind it, drawing back the whole time
+    const th = Math.PI * E.inOut(clamp((t - .1) / .72, 0, 1));
+    const R = R0 * Math.pow(R1 / R0, E.in2(t));
+    cam.pos.copy(Ce).addScaledVector(base.clone().applyAxisAngle(Y, th), R);
+    cam.pos.y += R * .12 * Math.sin(Math.PI * t) * sm(.15, .5, t);   // stay low over the surface at first, rise later
+    // the sun turns with us so the earth's face stays lit from the upper left
+    SUN.copy(SUN0).applyAxisAngle(Y, th); sunLight.position.copy(SUN).multiplyScalar(10);
+    // aim between earth and moon, then onto the earth, then slide it to where the pale blue dot will be
+    const w = .45 * sm(0, .2, t) * (1 - sm(.5, .82, t));   // aim takes the moon in from the start
+    cM.copy(moon.position).y -= 200;
+    const target = Ce.clone().lerp(cM, w);
+    target.lerp(look0, 1 - E.inOut(clamp(t / .25, 0, 1)));
+    const s = E.inOut(clamp((t - .74) / .24, 0, 1));
+    if (s > 0) {
+      fwd.copy(Ce).sub(cam.pos).normalize(); right.crossVectors(fwd, Y).normalize(); up.crossVectors(right, fwd);
+      const nx = earthPt.x / innerWidth * 2 - 1, ny = 1 - earthPt.y / innerHeight * 2;
+      const ty = Math.tan(fovS * Math.PI / 360), tx = ty * innerWidth / innerHeight, dist = cam.pos.distanceTo(Ce);
+      target.lerp(Ce, s).addScaledVector(right, -nx * tx * dist * s).addScaledVector(up, -ny * ty * dist * s);
+    }
+    // frame from the bodies' real angular positions: wide enough to hold both, never narrower than 7°
+    const dE = cam.pos.distanceTo(Ce), dM = cam.pos.distanceTo(cM);
+    cE.copy(Ce).sub(cam.pos).normalize(); fwd.copy(cM).sub(cam.pos).normalize();
+    const sep = Math.acos(clamp(cE.dot(fwd), -1, 1)), rE = Math.atan(600 / dE), rM = Math.atan(200 / Math.max(dM, 201));
+    const half = Math.max(w * sep + rE, (1 - w) * sep * (1 - s) + rM * (1 - s)) * 1.3;
+    const fovT = lerp(f0, clamp(THREE.MathUtils.radToDeg(2 * half), 7, 60), E.inOut(clamp(t / .3, 0, 1)));
+    // critically damped follow on aim and fov: no kinks, no frame-to-frame snaps
+    // the follow tightens toward the end so the earth lands on the dot's position without a snap
+    const tight = sm(.86, 1, t);
+    const aA = 1 - Math.exp(-dt * (5 + 55 * tight)), aF = 1 - Math.exp(-dt * (3.5 + 55 * tight));
+    aimS.lerp(target, t < .02 ? 0 : aA); fovS += (fovT - fovS) * aF;
+    cam.look.copy(aimS); cam.fov = fovS;
+    const b = sm(.55, .95, t);
+    EXPOSURE.value = 1 + 1.4 * b; PALE.value = sm(.6, .92, t); glow.material.opacity = .9 * sm(.7, 1, t);
+  }, x => x);
+  // cutover: the bright point becomes the dot in the dust
+  spaceMoving = false; drag.on = false; globeL.classList.remove('dragging');
+  pbdImg.style.transition = 'none'; pbdImg.style.transform = 'none'; pbdImg.style.filter = 'brightness(1.3)';
+  pbdL.style.opacity = '0'; pbdL.classList.add('instant', 'on');
+  await tween(1000, k => { pbdL.style.opacity = String(k); globeL.style.opacity = String(1 - k); }, E.inOut);
+  globeL.classList.add('instant'); globeL.classList.remove('on', 'moon'); globeL.style.opacity = '';
+  pbdL.style.opacity = ''; pbdL.classList.remove('instant');
+  globeOn = false; moon.visible = false; resetSpace();
+  await nextFrame(); globeL.classList.remove('instant');
+  scene = 'pbd';
+  await sleep(600);
+  await typeWords();
+  busy = false;
+}
+// letter by letter, no cursor, with a longer breath before the ":" and the ")"
+let typeTok = 0;
+async function typeWords() {
+  const el = $('#pbd-words'), tok = ++typeTok, text = 'maybe you\nshould\nworry less\n:)';
+  el.textContent = '';
+  for (const ch of text) {
+    let d = 70 + Math.random() * 60;
+    if (ch === ' ') d = 150; else if (ch === '\n') d = 420; else if (ch === ':') d = 900; else if (ch === ')') d = 1100;
+    await sleep(d);
+    if (tok !== typeTok) return;
+    el.append(ch === '\n' ? document.createElement('br') : ch);
+  }
+}
+
+/* ---------- 5 → 1 · out past the dot to the galaxies again ---------- */
+async function dotToGalaxy() {
+  if (scene !== 'pbd' || busy) return;
+  typeTok++;
+  busy = true; scene = 'leaving';
+  pbdMark.classList.remove('show');
+  const lone = $('#lone'), sm = (a, b, v) => { const q = clamp((v - a) / (b - a), 0, 1); return q * q * (3 - 2 * q); };
+  lone.style.transform = `translate(${earthPt.x}px, ${earthPt.y}px)`; lone.style.opacity = '1';
+  // the dust thins away, leaving the dot alone in the dark
+  pbdImg.style.transition = 'none';
+  await tween(1500, k => {
+    pbdImg.style.filter = `brightness(${(1.3 * (1 - k)).toFixed(3)})`;
+    pbdImg.style.transform = `scale(${1 - .05 * k})`;
+  }, E.inOut);
+  pbdL.classList.add('instant'); pbdL.classList.remove('on');
+  await sleep(500);
+  // the dot becomes the galaxy we first fell into: the field starts shrunk to a point under the dot,
+  // then grows to full size and glides back to its resting place (the field's own black needs no mask)
+  deep.classList.add('hold');
+  deepPlate.style.setProperty('--ds', 1); deepPlate.style.setProperty('--px', '0px'); deepPlate.style.setProperty('--py', '0px');
+  deep.style.clipPath = ''; deep.style.opacity = '0';
+  deep.classList.add('instant', 'on');
+  const G = galaxyPt(), pr = deepPlate.getBoundingClientRect(), driftS = pr.width / deepPlate.offsetWidth;
+  deepPlate.style.transformOrigin = `${G.ox}px ${G.oy}px`;
+  const w0 = deepPlate.offsetWidth, h0 = deepPlate.offsetHeight;
+  await tween(2800, k => {
+    const e = E.inOut(k), sc = .04 * Math.pow(25, E.inOut(k));     // 0.04 → 1, exponential so it reads as one steady zoom
+    const qx = lerp(earthPt.x, G.x, e), qy = lerp(earthPt.y, G.y, e);
+    deepPlate.style.setProperty('--px', ((qx - G.x) / driftS).toFixed(2) + 'px');
+    deepPlate.style.setProperty('--py', ((qy - G.y) / driftS).toFixed(2) + 'px');
+    deepPlate.style.setProperty('--ds', sc.toFixed(4));
+    deep.style.opacity = String(sm(0, .15, k));
+    lone.style.opacity = String(1 - sm(0, .3, k));
+  }, x => x);
+  deep.style.opacity = ''; deep.classList.remove('instant', 'hold');
+  deepPlate.style.setProperty('--px', '0px'); deepPlate.style.setProperty('--py', '0px'); deepPlate.style.setProperty('--ds', 1);
+  lone.style.opacity = '0';
+  pbdImg.style.transform = 'none'; pbdImg.style.filter = 'brightness(1.3)'; pbdL.classList.remove('instant');
+  $('#pbd-words').textContent = '';
+  scene = 'deep';
+  busy = false;
+}
+
+/* ---------- wiring ---------- */
+$('#cite').addEventListener('click', e => e.stopPropagation());
+deep.addEventListener('click', galaxyToRoom);
+pbdL.addEventListener('click', dotToGalaxy);
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') { roomToGlobe(); return; }
+  if (busy || !(e.key === ' ' || e.key === 'ArrowRight' || e.key === 'Enter')) return;
+  if (e.target.closest && e.target.closest('.pin')) return;   // pins handle their own keys
+  if (e.key === 'Enter' && document.activeElement === globeMark) return; // button handles it
+  e.preventDefault();
+  if (scene === 'deep') galaxyToRoom();
+  else if (scene === 'wall') wallToRoom();
+  else if (scene === 'room') roomToGlobe();
+  else if (scene === 'globe') e.key === 'Enter' ? globeToRoom() : toMoon();
+  else if (scene === 'moon') moonToDot();
+  else if (scene === 'pbd') dotToGalaxy();
+});
+addEventListener('resize', () => {
+  layoutPBD();
+  if (renderer) {
+    renderer.setSize(innerWidth, innerHeight, false);
+    camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+    if (scene === 'globe') cam.pos.z = zBase() * zoomF;
+  }
+  if (roomOn) { layoutRoom(); seedLine(); }
+  if (wallOn) wallLayout(); else sizeWallGL();
+});
+})();
+</script>
+</body>
+</html>
