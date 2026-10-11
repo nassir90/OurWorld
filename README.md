@@ -97,3 +97,5 @@ npm install
 npm run dev      # local preview
 npm run deploy   # deploy the worker and its assets
 ```
+
+mpts.ie itself is [BannerAndLogo](https://github.com/nassir90/BannerAndLogo) on `mpts.ie/*`; this route is more specific, so it wins. You Are Here is listed on the games index, [mpts.ie/games](https://mpts.ie/games/), and has a stack of clips on the home page (BannerAndLogo's `site/games/index.html` and `site/index.html`), so a changed route needs updating there too.
