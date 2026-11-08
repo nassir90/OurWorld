@@ -1,6 +1,6 @@
 # Our World
 
-WebGL recreation of [this reel](https://www.tiktok.com/@sopaguada/video/7690600273236004103) by @sopaguada.
+ThreeJS conversion of [a video about the solar system](https://www.tiktok.com/@sopaguada/video/7690600273236004103) by @sopaguada.
 
 **Live:** [mpts.ie/games/ourworld](https://mpts.ie/games/ourworld/)
 
