@@ -88,6 +88,10 @@ Click once more and the dot becomes the galaxy you first fell into, which grows 
 - **The polaroid photographs and the paper earth** were generated for this project.
 - Built with [three.js](https://threejs.org/), Archivo Narrow and VT323 from Google Fonts.
 
+## License
+
+The code is [MIT](LICENSE). The NASA and ESA imagery keeps the terms credited above.
+
 ## Development
 
 The site is static: everything lives in [`public/games/ourworld/`](public/games/ourworld/) (one `index.html` and its images). A small Cloudflare Worker serves it at `mpts.ie/games/ourworld` and redirects the bare path to the trailing-slash URL.
