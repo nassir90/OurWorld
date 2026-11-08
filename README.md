@@ -1,6 +1,6 @@
 # Our World
 
-A WebGL recreation of [this reel](https://www.tiktok.com/@sopaguada/video/7690600273236004103) by @sopaguada.
+WebGL recreation of [this reel](https://www.tiktok.com/@sopaguada/video/7690600273236004103) by @sopaguada.
 
 **Live:** [mpts.ie/games/ourworld](https://mpts.ie/games/ourworld/)
 
@@ -43,7 +43,7 @@ The code is [MIT](LICENSE). The NASA and ESA imagery keeps the terms credited ab
 
 ## Development
 
-The site is static: everything lives in [`public/games/ourworld/`](public/games/ourworld/) (one `index.html` and its images). A small Cloudflare Worker serves it at `mpts.ie/games/ourworld` and redirects the bare path to the trailing-slash URL.
+Static site in [`public/games/ourworld/`](public/games/ourworld/), served at `mpts.ie/games/ourworld` by a Cloudflare Worker.
 
 ```bash
 npm install
