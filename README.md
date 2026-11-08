@@ -41,12 +41,9 @@ ThreeJS conversion of [a video about the solar system](https://www.tiktok.com/@s
 
 The code is [MIT](LICENSE). The NASA and ESA imagery keeps the terms credited above.
 
-## Development
-
-Static site in [`public/games/ourworld/`](public/games/ourworld/), served at `mpts.ie/games/ourworld` by a Cloudflare Worker.
+## Running it
 
 ```bash
 npm install
 npm run dev      # local preview
-npm run deploy   # deploy the worker and its assets
 ```
